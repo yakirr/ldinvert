@@ -39,9 +39,7 @@ def regions_in_chromosome(regions, chrom_num):
 
 # returns a mask that can be applied to the SNPs in a chromosome
 # and pulls out SNPs in a given pathway
-def indexset_wrt_chromosome(chrom_num, regions_to_indexsets, dataset_name):
-    chrom_length_SNPs = chromosome_length_in_SNPs(chrom_num, dataset_name)
-    chromosome_mask = np.ones(chrom_length_SNPs, dtype=bool)
+def indexset_wrt_chromosome(chrom_num, regions_to_indexsets):
     result = IntRangeSet()
     result.add([regions_to_indexsets[r] for r in regions_to_indexsets.keys() if r.chrom == 'chr' + str(chrom_num)])
     return result

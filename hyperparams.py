@@ -1,6 +1,7 @@
 from __future__ import print_function, division
 import pickle
 import argparse
+from pysnptools.snpreader import Bed
 import pyutils.fs as fs
 import pyutils.configs
 
@@ -37,9 +38,9 @@ def chromosomes():
     return range(params.first_chrom, 23)
 
 beta_params_parser = argparse.ArgumentParser()
-beta_params_parser.add_argument('--h2gA', type=float, default=0.3,
+beta_params_parser.add_argument('--h2gA', type=float, default=0.2,
         help='the heritability to include in the pathway, on average')
-beta_params_parser.add_argument('--h2gG', type=float, default=0.7,
+beta_params_parser.add_argument('--h2gG', type=float, default=0.3,
         help='the heritability to include in the rest of the genome on average')
 beta_params_parser.add_argument('--pA', type=float, default=1,
         help='the probability of a SNP in the pathway being causal')
@@ -55,8 +56,19 @@ sumstats_params_parser.add_argument('--N', type=int, default=14526)
 def pathway_file(mode='rb'):
     return open(paths.pathways_with_flanks + 'pathway.regions_to_indexsets', mode)
 
+def pathway_with_flanks_file(mode='rb'):
+    return open(paths.pathways_with_flanks + 'merged.regions_to_indexsets', mode)
+
+def genotypes_bed_file(chrnum):
+    return Bed(paths.genotypes + 'all.' + str(chrnum))
+
 def covariance_around_pathway_file(mode='rb'):
     return open(paths.pathways_with_flanks + 'merged.covariance.bda', mode)
+
+def ldscores_files(mode='rb'):
+    return open(paths.pathways_with_flanks + 'pathway.chrnum_to_ldscores', mode), \
+            open(paths.pathways_with_flanks + 'notpathway.chrnum_to_ldscores', mode)
+
 
 def results_dirname():
     return 'fc=' + str(params.first_chrom) + \

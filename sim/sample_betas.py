@@ -27,8 +27,7 @@ def sample_betas(num_betas, chrnum, p_causal_class, p_causal_rest,
     SNPs_on_chrom = gutils.chromosome_length_in_SNPs(chrnum, hp.dataset.name)
     p_indexset_wrt_chrom = gutils.indexset_wrt_chromosome(
             chrnum,
-            p_regions_to_indexsets,
-            hp.dataset.name)
+            p_regions_to_indexsets)
 
     SNPs_in_pathway = len(p_indexset_wrt_chrom)
     genome_effects = point_normal(num_betas, p_causal_rest, sigma2_rest,

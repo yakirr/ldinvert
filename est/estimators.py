@@ -44,24 +44,27 @@ ldscores_notpathway = np.concatenate([ldscores_notpathway[c] for c in keys])
 ldscores = ldscores_pathway + ldscores_notpathway
 total_ldscore = np.sum(ldscores)
 avg_ldscore = np.mean(ldscores)
-X = np.array([ldscores_pathway, ldscores_notpathway]).T
+X = np.array([np.ones(len(ldscores_pathway)), ldscores_pathway, ldscores_notpathway]).T
 print('total ld score to pathway:', np.sum(ldscores_pathway))
 print('total ld score to rest of genome:', np.sum(ldscores_notpathway))
 def LDSC(chrnum_to_alphahat, indiv_indices, Y, N):
-    global X
-    keys = chrnum_to_alphahat.keys()
     alphahat = np.concatenate([chrnum_to_alphahat[k] for k in keys])
+    chisq = hp.sumstats_params.N * alphahat ** 2
 
-    tauhat = (np.mean(alphahat ** 2) - 1) / (hp.sumstats_params.N * avg_ldscore)
-    w = np.array([
+    tauhat = (np.mean(chisq) - 1) / (hp.sumstats_params.N * avg_ldscore)
+    w = np.sqrt(np.array([
         1 / (l * (1 + hp.sumstats_params.N * tauhat * l)**2) for l in ldscores
-        ])
-    X = X * w[:,None]
-    hat_matrix = np.linalg.inv(X.T.dot(X)).dot(X.T)
+        ]))
+    weighted_X = X * w[:,None]
+    hat_matrix = np.linalg.inv(weighted_X.T.dot(weighted_X)).dot(weighted_X.T)
 
-    weighted_alphahat = w * (alphahat ** 2)
-    solution = hat_matrix.dot(alphahat)
-    return solution[0] * gutils.total_size_snps(pathway_regions_to_indexsets.values())
+    weighted_chisq = w * chisq
+    solution = hat_matrix.dot(weighted_chisq)
+    result = solution[1] * gutils.total_size_snps(pathway_regions_to_indexsets.values()) / \
+            hp.sumstats_params.N
+    # import pdb
+    # pdb.set_trace()
+    return result
 
 methods = {
         'mle' : MLE,

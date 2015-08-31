@@ -38,9 +38,9 @@ def chromosomes():
     return range(params.first_chrom, 23)
 
 beta_params_parser = argparse.ArgumentParser()
-beta_params_parser.add_argument('--h2gA', type=float, default=0.2,
+beta_params_parser.add_argument('--h2gA', type=float, default=0.3,
         help='the heritability to include in the pathway, on average')
-beta_params_parser.add_argument('--h2gG', type=float, default=0.3,
+beta_params_parser.add_argument('--h2gG', type=float, default=0.7,
         help='the heritability to include in the rest of the genome on average')
 beta_params_parser.add_argument('--pA', type=float, default=1,
         help='the probability of a SNP in the pathway being causal')

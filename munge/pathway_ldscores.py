@@ -10,14 +10,18 @@ import hyperparams as hp
 hp.load()
 pathway = pickle.load(hp.pathway_file())
 #TODO: make the window be in genome coordinates not snps
-ldscore_window_in_snps = 100
+ldscore_window_in_snps = 500
+
+# sample random set of 14k individuals (this is done for ldscore and for covariance)
+np.random.seed(0)
+iids = np.random.choice(gutils.sample_size(hp.dataset), size=14000, replace=False)
 
 chrnum_to_ldscores_A = {}
 chrnum_to_ldscores_G = {}
 def compute_ldscores_for_chrom(chrnum):
     global chrnum_to_ldscores_A, chrnum_to_ldscores_G
     print(chrnum)
-    genotypes = hp.genotypes_bed_file(chrnum).read()
+    genotypes = hp.dataset.genotypes_bedfile(chrnum)[iids,:].read()
     genotypes.standardize(); genotypes.standardize()
     chrnum_to_ldscores_A[chrnum] = np.zeros(genotypes.sid_count)
     chrnum_to_ldscores_G[chrnum] = np.zeros(genotypes.sid_count)
@@ -29,7 +33,8 @@ def compute_ldscores_for_chrom(chrnum):
         end = min(genotypes.sid_count, m + int(ldscore_window_in_snps / 2))
 
         def add_ld_to_neighboring_snp(m_prime):
-            ldscore = (genotypes.val[:,m].dot(genotypes.val[:,m_prime]) / genotypes.iid_count)**2 - one_over_N
+            ldscore = (genotypes.val[:,m].dot(genotypes.val[:,m_prime])
+                    / genotypes.iid_count)**2 - one_over_N
             if m_prime in pathway_indexset:
                 chrnum_to_ldscores_A[chrnum][m] += ldscore
             else:
@@ -39,6 +44,6 @@ def compute_ldscores_for_chrom(chrnum):
 map(compute_ldscores_for_chrom, hp.chromosomes())
 
 # write output
-with ldscores_A_file, ldscores_G_file = hp.ldscores_files(mode='wb'):
+with hp.ldscores_files(mode='wb') as ldscores_A_file, ldscores_G_file:
     pickle.dump(chrnum_to_ldscores_A, ldscores_A_file, 2)
     pickle.dump(chrnum_to_ldscores_G, ldscores_G_file, 2)

@@ -30,7 +30,9 @@ class BlockDiagArray(object):
         return self.regions_to_indexsets.values()
 
     def inv(self):
-        regions_to_invarrays = {r:np.linalg.inv(self.regions_to_arrays[r]) for r in self.regions()}
+        regions_to_invarrays = {
+                r:np.linalg.inv(self.regions_to_arrays[r]) for r in self.regions()
+                }
         return BlockDiagArray(regions_to_invarrays, self.regions_to_indexsets)
 
     def trace(self):
@@ -42,8 +44,12 @@ class BlockDiagArray(object):
     @staticmethod
     def merge(bdms):
         regions = [r for bdm in bdms for r in bdm.regions()]
-        regions_to_arrays = {r:bdm.regions_to_arrays[r] for bdm in bdms for r in bdm.regions()}
-        regions_to_indexsets = {r:bdm.regions_to_indexsets[r] for bdm in bdms for r in bdm.regions()}
+        regions_to_arrays = {
+                r:bdm.regions_to_arrays[r] for bdm in bdms for r in bdm.regions()
+                }
+        regions_to_indexsets = {
+                r:bdm.regions_to_indexsets[r] for bdm in bdms for r in bdm.regions()
+                }
         return BlockDiagArray(regions_to_arrays, regions_to_indexsets)
 
     # intersect this block with another set of regions
@@ -55,7 +61,7 @@ class BlockDiagArray(object):
             start = indexset.index(stretch[0])
             mask[start:start + stretch[1] - stretch[0]] = True
         array[~mask] = 0
-        array.T[~mask] = 0     # if array is a 1d array then this line will not create a problem
+        array.T[~mask] = 0     # done this way for compatibility with 1d arrays
 
     def restricted_to_chromosome(self, chrom_num):
         regions = gutils.regions_in_chromosome(self.regions(), chrom_num)
@@ -96,10 +102,18 @@ class BlockDiagArray(object):
             return sum(result_regions_to_arrays.values())
 
     # adds lambda I to the diagonals of everything
-    def add_lambdaI(self, Lambda):
-        return BlockDiagArray(
-                { r:self.regions_to_arrays[r] + Lambda * np.eye(len(A)) for r, A in self.regions_to_arrays.items() },
-                self.regions_to_indexsets)
+    def add_lambdaI(self, Lambda, renormalize=False):
+        normalization = 1 + Lambda if renormalize else 1
+        return BlockDiagArray({
+                r:(self.regions_to_arrays[r] + Lambda * np.eye(len(A))) / normalization
+                for r, A in self.regions_to_arrays.items()
+            },
+            self.regions_to_indexsets)
+
+    # assumes all the arrays are 1-d
+    def plot(self, outfile):
+        pass #TODO: implement
+
 
     # assumes the both arrays have the exact same set of ranges
     @staticmethod
@@ -194,7 +208,10 @@ if __name__ == '__main__':
 
     # create the vector to operate on together with its BDM version
     v = np.arange(100, dtype=np.float32)
-    v_class = BlockDiagArray({r:v[iset] for r, iset in regions_to_indexsets.items()}, regions_to_indexsets)
+    v_class = BlockDiagArray({
+            r:v[iset] for r, iset in regions_to_indexsets.items()
+        },
+        regions_to_indexsets)
 
     print('dense vT.M.v =', v.dot(M_blockdiag.dot(v)))
     print('sparse vT.M.V =', v_class.dot(M_class.dot(v_class)))

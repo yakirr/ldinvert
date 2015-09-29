@@ -1,33 +1,60 @@
 from __future__ import print_function, division
 import pickle
 import argparse
+from pybedtools import BedTool
 from pysnptools.snpreader import Bed
 import pyutils.fs as fs
 import pyutils.configs
 
 #######################################################
+## data set definitions
+#######################################################
+WT1QC_fewnans = argparse.Namespace()
+WT1QC_fewnans.name = 'WT1QC_fewnans'
+WT1QC_fewnans.reference_genome = 'hg18'
+WT1QC_fewnans.path = '/groups/price/hilary/data/WT1QC_fewnans/'
+WT1QC_fewnans.genotypes_bedfile = \
+        lambda chrnum : Bed(WT1QC_fewnans.path + 'all.' + str(chrnum))
+WT1QC_fewnans.snps_bedtool = \
+        lambda chrnum : BedTool(WT1QC_fewnans.path + 'all.' + str(chrnum) + '.ucscbed')
+
+GERA = argparse.Namespace()
+GERA.name = 'GERA'
+GERA.reference_genome = 'hg18'
+GERA.path = '/groups/price/poru/HSPH_SVN/data/GERA/filters/'
+GERA.genotypes_bedfile = \
+        lambda chrnum : Bed(GERA.path + 'eur-' + str(chrnum) + '-filtered')
+GERA.snps_bedtool = \
+        lambda chrnum : BedTool(
+            '/groups/price/yakir/data/genotypes/GERA/eur-'+str(chrnum)+'-filtered.ucscbed')
+
+#######################################################
 ## Global variables that aren't read from command line
 #######################################################
-dataset = argparse.Namespace()
-dataset.name = 'WT1QC_fewnans'
-dataset.reference_genome = 'hg18'
-dataset.pathway = '99'
+dataset = GERA
+
+pathway = argparse.Namespace()
+pathway.name = '99'
+pathway.window_size_Mb = 1
+pathway.chr22only = False
+pathway.group = ('chr22.' if pathway.chr22only else '') + \
+        str(pathway.window_size_Mb) + 'Mb_flanks'
 
 paths = argparse.Namespace()
 paths.code = '/groups/price/yakir/py/'
-paths.genotypes = '/groups/price/hilary/data/' + dataset.name + '/'
-paths.reference = '/groups/price/yakir/data/reference/'
-paths.pathways_with_flanks = '/groups/price/yakir/data/GO.1Mb_flanks/' + \
-        dataset.pathway + '.' + dataset.name + '/'
+paths.data = '/groups/price/yakir/data/'
+paths.reference = paths.data + 'reference/'
+paths.pathway_details = paths.data + pathway.group + '/' + \
+        pathway.name + '.' + dataset.name + '/'
 paths.sumstats = '/groups/price/yakir/data/sumstats/' + \
-        dataset.pathway + '.' + dataset.name + '/'
+        pathway.name + '.' + dataset.name + '/'
 
 print('==global variables==')
-pyutils.configs.print_vars(dataset)
-pyutils.configs.print_vars(paths)
+pyutils.configs.print_vars(dataset); print()
+pyutils.configs.print_vars(pathway); print()
+pyutils.configs.print_vars(paths); print()
 print('====================')
 
-#TODO: change name to globals
 #######################################################
 ## Variables read from command line
 #######################################################
@@ -38,9 +65,9 @@ def chromosomes():
     return range(params.first_chrom, 23)
 
 beta_params_parser = argparse.ArgumentParser()
-beta_params_parser.add_argument('--h2gA', type=float, default=0.3,
+beta_params_parser.add_argument('--h2gA', type=float, default=1,
         help='the heritability to include in the pathway, on average')
-beta_params_parser.add_argument('--h2gG', type=float, default=0.7,
+beta_params_parser.add_argument('--h2gG', type=float, default=0,
         help='the heritability to include in the rest of the genome on average')
 beta_params_parser.add_argument('--pA', type=float, default=1,
         help='the probability of a SNP in the pathway being causal')
@@ -54,20 +81,20 @@ sumstats_params_parser.add_argument('--N', type=int, default=14526)
 ## Functions that determine the file structure of the data
 #######################################################
 def pathway_file(mode='rb'):
-    return open(paths.pathways_with_flanks + 'pathway.regions_to_indexsets', mode)
+    return open(paths.pathway_details + 'pathway.regions_to_indexsets', mode)
 
 def pathway_with_flanks_file(mode='rb'):
-    return open(paths.pathways_with_flanks + 'merged.regions_to_indexsets', mode)
+    return open(paths.pathway_details + 'merged.regions_to_indexsets', mode)
 
-def genotypes_bed_file(chrnum):
-    return Bed(paths.genotypes + 'all.' + str(chrnum))
+def pathway_flanks_file(mode='rb'):
+    return open(paths.pathway_details + 'flanks.regions_to_indexsets', mode)
 
 def covariance_around_pathway_file(mode='rb'):
-    return open(paths.pathways_with_flanks + 'merged.covariance.bda', mode)
+    return open(paths.pathway_details + 'merged.covariance.bda', mode)
 
 def ldscores_files(mode='rb'):
-    return open(paths.pathways_with_flanks + 'pathway.chrnum_to_ldscores', mode), \
-            open(paths.pathways_with_flanks + 'notpathway.chrnum_to_ldscores', mode)
+    return open(paths.pathway_details + 'pathway.chrnum_to_ldscores', mode), \
+            open(paths.pathway_details + 'notpathway.chrnum_to_ldscores', mode)
 
 
 def results_dirname():

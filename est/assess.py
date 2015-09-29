@@ -31,12 +31,12 @@ def analyze_beta(beta_num, truth):
     while True:
         try:
             test = hp.noisy_Y_file(beta_num, index); test.close()
-            result = analyze_sample(beta_num, index)
-            for m in estimators.methods.keys():
-                results[m].append(result[m])
-            index += 1
-        except:
+        except IOError:
             break
+        result = analyze_sample(beta_num, index)
+        for m in estimators.methods.keys():
+            results[m].append(result[m])
+        index += 1
     results = {m:np.array(results[m]) for m in estimators.methods.keys()}
     return process_results(truth, results)
 
@@ -75,7 +75,7 @@ def write_results(truth, biases, variances):
 
 if __name__ == '__main__':
     hp.load()
-    truth, biases, variances = analyze()
+    truth, biases, variances = analyze(first_beta=1)
     write_results(truth, biases, variances)
 
 

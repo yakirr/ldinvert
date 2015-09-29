@@ -7,9 +7,13 @@ import hyperparams as hp
 
 pathway_regions_to_indexsets = pickle.load(hp.pathway_file())
 R = pickle.load(hp.covariance_around_pathway_file())    # R is a BlockDiagArray
+R_reg = R.add_lambdaI(0.05, renormalize=True)
+R_ridge = R.add_lambdaI(0.05)
 RA = R.copy().restrict(pathway_regions_to_indexsets)
 RA_Rinv = RA.dot(R.inv())
 RA_Rinv_trace = RA_Rinv.trace()
+RA_Rreginv_trace = RA.dot(R_reg.inv()).trace()
+RA_Rridgeinv_trace = RA.dot(R_ridge.inv()).trace()
 
 print('pathway size:', gutils.total_size_snps(pathway_regions_to_indexsets.values()))
 print('merged size:', gutils.total_size_snps(R.indexsets()))
@@ -27,6 +31,18 @@ def MLE(chrnum_to_alphahat, indiv_indices, Y, N):
     betahat = bd.BlockDiagArray.solve(R, alphahat)
     biased = betahat.dot(RA.dot(betahat))
     return biased - RA_Rinv_trace / N
+
+def MLE_reg(chrnum_to_alphahat, indiv_indices, Y, N):
+    alphahat = to_block_diag(chrnum_to_alphahat)
+    betahat = bd.BlockDiagArray.solve(R_reg, alphahat)
+    biased = betahat.dot(RA.dot(betahat))
+    return biased - RA_Rreginv_trace / N
+
+def MLE_ridge(chrnum_to_alphahat, indiv_indices, Y, N):
+    alphahat = to_block_diag(chrnum_to_alphahat)
+    betahat = bd.BlockDiagArray.solve(R_ridge, alphahat)
+    biased = betahat.dot(RA.dot(betahat))
+    return biased - RA_Rridgeinv_trace / N
 
 def MLE_fixed_indiv(chrnum_to_alphahat, indiv_indices, Y, N):
     alphahat = to_block_diag(chrnum_to_alphahat)
@@ -68,6 +84,8 @@ def LDSC(chrnum_to_alphahat, indiv_indices, Y, N):
 
 methods = {
         'mle' : MLE,
-        'mle_fixed' : MLE_fixed_indiv,
+        'mle_reg' : MLE_reg,
+        'mle_ridge' : MLE_ridge,
+        # 'mle_fixed' : MLE_fixed_indiv,
         'ldsc' : LDSC
         }

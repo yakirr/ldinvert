@@ -46,7 +46,7 @@ def main(args):
 
     # load relevant outside information about pathway and genome as well as genotypes
     p_regions_to_indexsets = pickle.load(
-            open(hp.paths.pathways_with_flanks + 'pathway.regions_to_indexsets', 'rb'))
+            open(hp.paths.pathway_details + 'pathway.regions_to_indexsets', 'rb'))
     pathway_size_SNPs = gutils.total_size_snps(p_regions_to_indexsets.values())
     genome_size_SNPs = gutils.snps_in_dataset(hp.dataset.name)
 
@@ -114,7 +114,6 @@ def submit(args):
     print(' '.join(cmd))
     print(outfilepath)
     subprocess.call(cmd)
-
 
 
 if __name__ == '__main__':

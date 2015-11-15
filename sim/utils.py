@@ -3,7 +3,7 @@ import numpy as np
 from pysnptools.snpreader import Bed
 import hyperparams as hp
 
-def get_standardized_genotypes(chrnum):
-    genotypes = hp.dataset.genotypes_bedfile(chrnum).read()
+def get_standardized_genotypes(r):
+    genotypes = hp.dataset.genotypes_bedfile()[:,r[0]:r[1]].read()
     genotypes.standardize(); genotypes.standardize()
     return genotypes.val

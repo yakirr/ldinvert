@@ -21,5 +21,5 @@ with hp.results_file() as results:
 
     numbers = np.concatenate((numbers, [last_row]))
 
-with hp.results_file(mode='w') as results:
+with hp.results_file_processed(mode='w') as results:
     np.savetxt(results, numbers, delimiter='\t', header=header, comments='')

@@ -6,109 +6,84 @@ import pysnptools.util as psutil
 from pysnptools.util import IntRangeSet
 
 class BlockDiagArray(object):
-    def __init__(self, regions_to_arrays, regions_to_indexsets):
-        self.regions_to_arrays = {}
-        self.regions_to_indexsets = {}
-        for r in regions_to_arrays.keys():
-            if regions_to_arrays[r].shape and regions_to_arrays[r].size > 0:
-                self.regions_to_arrays[r] = regions_to_arrays[r]
-                self.regions_to_indexsets[r] = regions_to_indexsets[r]
+    def __init__(self, ranges_to_arrays):
+        self.ranges_to_arrays = {}
+        for r in ranges_to_arrays.keys():
+            if ranges_to_arrays[r].shape and ranges_to_arrays[r].size > 0:
+                self.ranges_to_arrays[r] = ranges_to_arrays[r]
+        self.intrangeset = IntRangeSet(self.ranges_to_arrays.keys())
 
     def __str__(self):
         result = ''
-        for r, a in self.regions_to_arrays.items():
-            result += str(r) + str(a) + '\n'
+        for r, a in self.ranges_to_arrays.items():
+            result += str(r) + '\n' + str(a) + '\n'
         return result
 
     def copy(self):
         return copy.deepcopy(self)
 
-    def regions(self):
-        return self.regions_to_arrays.keys()
-
-    def indexsets(self):
-        return self.regions_to_indexsets.values()
+    def ranges(self):
+        return self.ranges_to_arrays.keys()
 
     def inv(self):
-        regions_to_invarrays = {
-                r:np.linalg.inv(self.regions_to_arrays[r]) for r in self.regions()
+        ranges_to_invarrays = {
+                r:np.linalg.inv(self.ranges_to_arrays[r]) for r in self.ranges()
                 }
-        return BlockDiagArray(regions_to_invarrays, self.regions_to_indexsets)
+        return BlockDiagArray(ranges_to_invarrays)
 
     def trace(self):
         return np.sum([
-            np.trace(a) for a in self.regions_to_arrays.values()
+            np.trace(a) for a in self.ranges_to_arrays.values()
             ])
 
     # merge several disjoint BDM's
     @staticmethod
     def merge(bdms):
-        regions = [r for bdm in bdms for r in bdm.regions()]
-        regions_to_arrays = {
-                r:bdm.regions_to_arrays[r] for bdm in bdms for r in bdm.regions()
+        ranges = [r for bdm in bdms for r in bdm.ranges()]
+        ranges_to_arrays = {
+                r:bdm.ranges_to_arrays[r] for bdm in bdms for r in bdm.ranges()
                 }
-        regions_to_indexsets = {
-                r:bdm.regions_to_indexsets[r] for bdm in bdms for r in bdm.regions()
-                }
-        return BlockDiagArray(regions_to_arrays, regions_to_indexsets)
+        return BlockDiagArray(ranges_to_arrays)
 
     # intersect this block with another set of regions
-    @staticmethod
-    def __restrict_block(array, indexset, other_indexset):
-        intersection_indexset = indexset & other_indexset
-        mask = np.zeros(len(indexset), dtype=bool)
-        for stretch in intersection_indexset.ranges():
-            start = indexset.index(stretch[0])
-            mask[start:start + stretch[1] - stretch[0]] = True
-        array[~mask] = 0
-        array.T[~mask] = 0     # done this way for compatibility with 1d arrays
-
-    def restricted_to_chromosome(self, chrom_num):
-        regions = gutils.regions_in_chromosome(self.regions(), chrom_num)
-        return BlockDiagArray({r:self.regions_to_arrays[r] for r in regions},
-                {r:self.regions_to_indexsets[r] for r in regions})
+    def __zero_block_outside_irs(self, r, other_intrangeset):
+        my_intrangeset = IntRangeSet(r)
+        intersection_intrangeset = my_intrangeset & other_intrangeset
+        mask = np.zeros(len(my_intrangeset), dtype=bool)
+        for s in intersection_intrangeset.ranges():
+            start = my_intrangeset.index(s[0])
+            end = start + s[1] - s[0]
+            mask[start:end] = True
+        self.ranges_to_arrays[r][~mask] = 0
+        self.ranges_to_arrays[r].T[~mask] = 0 # done this way for compatibility with 1d arrays
 
     # create a copy of this BDM restricted to a set of ranges.
-    def restrict(self, regions_to_indexsets):
-        bdms = []
-        for chrom_num in range(1,23):
-            self_on_chrom = self.restricted_to_chromosome(chrom_num)
-            regions_in_chrom = gutils.regions_in_chromosome(
-                    regions_to_indexsets.keys(),
-                    chrom_num
-                    )
-            union_in_chrom_indexset = IntRangeSet()
-            union_in_chrom_indexset.add([regions_to_indexsets[r] for r in regions_in_chrom])
-            for r in self_on_chrom.regions():
-                BlockDiagArray.__restrict_block(
-                        self_on_chrom.regions_to_arrays[r],
-                        self_on_chrom.regions_to_indexsets[r],
-                        union_in_chrom_indexset)
-            bdms.append(self_on_chrom)
-        return BlockDiagArray.merge(bdms)
+    def zero_outside_irs(self, other_intrangeset):
+        for r in self.ranges():
+            self.__zero_block_outside_irs(
+                    r,
+                    other_intrangeset)
+        return self
 
     # assumes the other matrix has the exact same set of ranges
     def dot(self, other):
-        result_regions_to_arrays = {
-                r:self.regions_to_arrays[r].dot(other.regions_to_arrays[r])
-                for r in self.regions()
+        result_ranges_to_arrays = {
+                r:self.ranges_to_arrays[r].dot(other.ranges_to_arrays[r])
+                for r in self.ranges()
                 }
-        if result_regions_to_arrays.values()[0].shape:
+        if result_ranges_to_arrays.values()[0].shape:
             return BlockDiagArray(
-                    result_regions_to_arrays,
-                    self.regions_to_indexsets
-                    )
+                    result_ranges_to_arrays)
         else:
-            return sum(result_regions_to_arrays.values())
+            return sum(result_ranges_to_arrays.values())
 
     # adds lambda I to the diagonals of everything
     def add_lambdaI(self, Lambda, renormalize=False):
         normalization = 1 + Lambda if renormalize else 1
         return BlockDiagArray({
-                r:(self.regions_to_arrays[r] + Lambda * np.eye(len(A))) / normalization
-                for r, A in self.regions_to_arrays.items()
-            },
-            self.regions_to_indexsets)
+                r:(self.ranges_to_arrays[r] + Lambda * np.eye(len(A))) / normalization
+                for r, A in self.ranges_to_arrays.items()
+            })
 
     # assumes all the arrays are 1-d
     def plot(self, outfile):
@@ -118,115 +93,69 @@ class BlockDiagArray(object):
     # assumes the both arrays have the exact same set of ranges
     @staticmethod
     def solve(A, b):
-        result_regions_to_arrays = {
-                r:np.linalg.solve(A.regions_to_arrays[r], b.regions_to_arrays[r])
-                for r in A.regions()
+        result_ranges_to_arrays = {
+                r:np.linalg.solve(A.ranges_to_arrays[r], b.ranges_to_arrays[r])
+                for r in A.ranges()
                 }
-        return BlockDiagArray(
-                result_regions_to_arrays,
-                A.regions_to_indexsets
-                )
+        return BlockDiagArray(result_ranges_to_arrays)
 
     @staticmethod
-    def eye(regions_to_indexsets):
-        return BlockDiagArray(
-                { r:np.eye(len(indexset)) for r, indexset in regions_to_indexsets.items() },
-                regions_to_indexsets
-                )
+    def eye(intrangeset):
+        return BlockDiagArray({r:np.eye(r[1] - r[0]) for r in intrangeset.ranges()})
 
 
 
-def bda_from_bigarrays(chrom_num_to_bigarrays, regions_to_indexsets):
-    regions_to_arrays = {}
-    for r, indexset in regions_to_indexsets.items():
-        chrom_num = int(r.chrom[3:])
-        if chrom_num in chrom_num_to_bigarrays:
-            regions_to_arrays[r] = chrom_num_to_bigarrays[chrom_num][regions_to_indexsets[r]]
-        else:
-            regions_to_arrays[r] = np.zeros(len(regions_to_indexsets[r]))
-    return BlockDiagArray(regions_to_arrays, regions_to_indexsets)
+# creates a bda from a large (1d) array by restricting it to the relevant intrangeset
+def bda_from_big1darray(bigarray, intrangeset):
+    return BlockDiagArray({
+        r : bigarray[r[0]:r[1]] for r in intrangeset.ranges()})
 
-# assumes that arrays_npz and masks_npz have the same
-# set of keys
-#TODO: delete the two functions below?
-def bdm_from_npz(arrays_npz, masks_npz):
-    regions = arrays_npz.keys()
-    return BlockDiagArray(
-            regions,
-            [arrays_npz[r] for r in regions],
-            [np.flatnonzero(masks_npz[r]) for r in regions]
-            )
-
-def bdm_from_chrom_npz(arrays_npz):
-    keys, regions = [], []
-    for chrom_num in range(1,23):
-        if str(chrom_num) in arrays_npz.keys():
-            keys.append(str(chrom_num))
-        elif 'chr' + str(chrom_num) in arrays_npz.keys():
-            keys.append('chr' + str(chrom_num))
-        regions.append('chr' + str(chrom_num) + '\t*\t*\n')
-    return BlockDiagArray(
-            regions,
-            [arrays_npz[k] for k in keys],
-            [IntRangeSet((0, len(arrays_npz[k]))) for k in keys]
-            )
 
 if __name__ == '__main__':
     from pybedtools import Interval
     np.set_printoptions(precision=3, linewidth=200, suppress=True)
     M = np.random.rand(100, 100)
-    regions_to_indexsets = {
-            Interval('chr1',1,19):IntRangeSet('1:20'),
-            Interval('chr1',50,59):IntRangeSet('50:60'),
-            Interval('chr1',99,99):IntRangeSet('99:100')
-            }
-    small_regions_to_indexsets = {
-            Interval('chr1',3,4):IntRangeSet('3:5'),
-            Interval('chr1',52,53):IntRangeSet('52:54'),
-            Interval('chr1',56,59):IntRangeSet('56:59')
-            }
+    intrangeset = IntRangeSet('1:20,50:60,99:100')
+    small_regions_to_indexsets = IntRangeSet('3:5,52:54,56:59')
 
-    # create dense block diagonal matrix
-    M_blockdiag = np.zeros((100, 100))
-    for iset in regions_to_indexsets.values():
+    # create block diagonal matrix manually
+    M_blockdiag = np.zeros(M.shape)
+    for r in intrangeset.ranges():
+        mask = np.zeros(len(M_blockdiag), dtype=bool)
+        mask[r[0]:r[1]] = True
         temp = np.copy(M)
-        mask = np.zeros(len(temp), dtype=bool)
-        mask[iset] = True
         temp[~mask] = 0
         temp.T[~mask] = 0
         M_blockdiag += temp
 
     # create equivalent BDM
     M_class = BlockDiagArray(
-            {r:psutil.sub_matrix(M, iset, iset) for r, iset in regions_to_indexsets.items()},
-            regions_to_indexsets
-            )
+            {r:psutil.sub_matrix(M, range(r[0], r[1]),
+                range(r[0], r[1])) for r in intrangeset.ranges()})
 
+    # test inv function of BlockDiagArray
     M_class_copy = M_class.copy()
     I = M_class.dot(M_class_copy.inv())
     print('M_class * M_class_copy^{-1} =', I)
 
+    # test quadratic form evaluation
     # create the vector to operate on together with its BDM version
     v = np.arange(100, dtype=np.float32)
-    v_class = BlockDiagArray({
-            r:v[iset] for r, iset in regions_to_indexsets.items()
-        },
-        regions_to_indexsets)
+    v_class = bda_from_big1darray(v, intrangeset)
 
     print('dense vT.M.v =', v.dot(M_blockdiag.dot(v)))
     print('sparse vT.M.V =', v_class.dot(M_class.dot(v_class)))
 
     # create dense version of the block diagonal matrix restricted to the smaller set
     M_blockdiag_smaller = np.copy(M_blockdiag)
-    all_small_indexsets = IntRangeSet.union(*small_regions_to_indexsets.values())
     mask = np.zeros(len(M), dtype=bool)
-    mask[all_small_indexsets] = True
+    mask[small_regions_to_indexsets] = True
     M_blockdiag_smaller[~mask] = 0
     M_blockdiag_smaller.T[~mask] = 0
 
     # restrict the BDMs to the smaller set
-    M_class.restrict(small_regions_to_indexsets)
-    v_class.restrict(small_regions_to_indexsets)
+    M_class.zero_outside_irs(small_regions_to_indexsets)
+    v_class.zero_outside_irs(small_regions_to_indexsets)
 
     print('dense vT.M.v =', v.dot(M_blockdiag_smaller.dot(v)))
     print('sparse vT.M.V =', v_class.dot(M_class.dot(v_class)))

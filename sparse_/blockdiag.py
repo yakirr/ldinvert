@@ -1,7 +1,6 @@
 from __future__ import print_function, division
 import numpy as np
 import copy
-import genome.utils as gutils
 import pysnptools.util as psutil
 from pysnptools.util import IntRangeSet
 

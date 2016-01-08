@@ -4,7 +4,6 @@ import glob
 import hyperparams as hp
 import matplotlib.pyplot as plt
 
-hp.load()
 
 def results_text_filename():
     return 'biases:' + hp.pathway.name + '.' + hp.dataset.name + ':' +\
@@ -64,7 +63,8 @@ def create_plot(results):
     plt.gcf().subplots_adjust(bottom=0.25)
     plt.savefig(hp.paths.aggregate_results + results_plot_filename(), dpi=400)
 
-def __main__():
+if __name__ == '__main__':
+    hp.load()
     results = map(process_results_file,
             sorted(glob.glob(hp.path_to_results_dir() + 'results:*')))
 

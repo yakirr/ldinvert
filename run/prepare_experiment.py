@@ -1,6 +1,6 @@
 from __future__ import print_function, division
 import argparse
-from framework import Experiment
+from primitives import Experiment
 
 
 if __name__ == '__main__':

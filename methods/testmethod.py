@@ -3,7 +3,6 @@ import argparse
 
 
 class TestMethodTypeA(object):
-    name = 'testmethodtypeA'
     required_preprocessing = 'covariance'
     parser = argparse.ArgumentParser()
     parser.add_argument('--myparam', type=float, required=True,
@@ -21,7 +20,6 @@ class TestMethodTypeA(object):
 
 
 class TestMethodTypeB(object):
-    name = 'testmethodtypeB'
     required_preprocessing = 'covariance'
     parser = argparse.ArgumentParser()
     parser.add_argument('--myparam', type=float, required=True,

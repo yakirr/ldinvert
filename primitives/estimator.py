@@ -3,7 +3,7 @@ import argparse
 import os, inspect
 import itertools
 from pyutils import fs, bsub
-from simulations import SumstatSimulation
+from simulation import SumstatSimulation
 import methods
 import paths
 

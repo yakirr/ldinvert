@@ -2,7 +2,7 @@ from __future__ import print_function, division
 import numpy as np
 import pickle, argparse, subprocess
 from time import time
-from pyutils import bsub
+from pyutils import bsub, pretty
 from primitives import SumstatSimulation, Dataset
 import paths
 
@@ -11,6 +11,7 @@ def main(args):
     np.random.seed(args.beta_num + args.sample_num * 10000)
     sim = SumstatSimulation(args.sim_name)
     d = Dataset(sim.dataset)
+    pretty.print_namespace(sim); print()
 
     # read in noiseless phenotypes
     Y = pickle.load(sim.noiseless_Y_file(args.beta_num))

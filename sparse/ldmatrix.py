@@ -9,7 +9,7 @@ from pyutils import iter as it
 class LdMatrix(object):
     # bandwidth will get adjusted down to the nearest odd number, and other
     # parts of the class assume that bandwidth is odd
-    def __init__(self, d, indivs, bandwidth, snpset_irs=None, output=True):
+    def __init__(self, d, indivs, bandwidth, snpset_irs=None, output=False):
         if snpset_irs is None:
             snpset_irs = IntRangeSet((0, d.M))
         bandwidth = bandwidth+1
@@ -56,31 +56,9 @@ class LdMatrix(object):
         self.covcsr = self.covcsr + self.covcsr.T
         if output: print('took time:', time() - t0)
 
-    # One of the two functions below doesn't work
-    # def restrict_to(self, subset_irs):
-    #     complement = IntRangeSet([(0,self.cov.shape[1])]) - subset_irs
-    #     for r in complement.ranges():
-    #         self.zero_out_rows_and_cols(r)
-
-    # def zero_out_rows_and_cols(self, r):
-    #     # zero out rows first
-    #     self.cov.data[:,r[0]:r[1]] = 0
-
-    #     # zero out what's left in column space
-    #     for n, j in enumerate(range(max(r[0] - int(self.bandwidth/2), 0), r[0])):
-    #         for i in range(n+1):
-    #             # print(i,j)
-    #             self.cov.data[i,j] = 0
-
-    #     for n, j in enumerate(
-    #             range(min(r[1] + int(self.bandwidth/2), self.cov.shape[1]), r[1], -1)):
-    #         for i in range(n+1):
-    #             # print(-i-1,j-1)
-    #             self.cov.data[-i-1,j-1] = 0
-
     # the following two functions modify the data in the scipy.sparse.dia_matrix
     # in order to fit it into the format of scipy.linalg.solve_banded since, unbelievably,
-    # the two have different formats
+    # the two have different formats. The functions assume that self.covdia exists
     def __to_sbformat(self):
         for i in range(self.covdia.data.shape[0]):
             self.covdia.data[i] = np.roll(self.covdia.data[i], -self.covdia.offsets[i])
@@ -89,13 +67,13 @@ class LdMatrix(object):
         for i in range(self.covdia.data.shape[0]):
             self.covdia.data[i] = np.roll(self.covdia.data[i], self.covdia.offsets[i])
 
-
     # linear algebra that we need to do efficiently
     def solve_banded(self, b):
-        from time import time
-        print('starting conversion to diagonal')
+        # from time import time
+        # print('starting conversion to diagonal')
+        # t0 = time()
         self.covdia = self.covcsr.todia()
-        print(time() - t0, 'done')
+        # print(time() - t0, 'done')
         self.__to_sbformat()
         result = spl.solve_banded((-self.covdia.offsets[0], self.covdia.offsets[-1]),
                 self.covdia.data,
@@ -103,8 +81,18 @@ class LdMatrix(object):
         self.__from_sbformat()
         return result
 
+    def trace_of_inverse_times_matrix(self, other):
+        non_zero_rows = np.unique(other.covcsr.nonzero()[0])
+        other_cols = other.covcsr[non_zero_rows].toarray().T
+        self_inv_times_other_cols = self.solve_banded(other_cols)
+        return np.trace(self_inv_times_other_cols[non_zero_rows])
+
     def add_ridge(self, Lambda):
-        self.covcsr += Lambda * sps.eye(d.M)
+        self.covcsr += Lambda * sps.eye(self.covcsr.shape[0])
+
+    def add_ridge_and_renormalize(self, Lambda):
+        self.add_ridge(Lambda)
+        self.covcsr /= (1 + Lambda)
 
 
 if __name__ == '__main__':
@@ -127,9 +115,10 @@ if __name__ == '__main__':
     print('computing R took', time() - t0)
     print('shape of R is:', R.covcsr.shape)
 
-    tiny = GenomicSubset('50')
-    tiny = SnpSubset(tiny, d.snp_coords())
-    RA = LdMatrix(d, indivs, 200, snpset_irs=tiny.irs, output=False)
+    # tiny = GenomicSubset('tiny')
+    # tiny_irs = SnpSubset(tiny, d.snp_coords()).irs
+    tiny_irs = IntRangeSet('300:350')
+    RA = LdMatrix(d, indivs, 200, snpset_irs=tiny_irs, output=False)
     b = np.random.randn(d.M)
 
     # check inverse computation
@@ -141,8 +130,8 @@ if __name__ == '__main__':
         print('R^{-1}b behaves well:', np.allclose(Rinvb, Rinvb_dense))
 
     t0 = time()
-    TrRRA = np.sum(R.covcsr.dot(RA.covcsr).diagonal())
-    print('Tr(R*RA) took', time() - t0)
+    TrRinvRA = R.trace_of_inverse_times_matrix(RA)
+    print('Tr(Rinv*RA) took', time() - t0)
     if args.check_dense:
-        TrRRA_dense = np.sum(R.covcsr.toarray() * RA.covcsr.toarray())
-        print('Tr(R*RA) behaves well:', np.allclose(TrRRA, TrRRA_dense))
+        TrRinvRA_dense = np.trace(np.linalg.solve(R.covcsr.toarray(), RA.covcsr.toarray()))
+        print('Tr(R*RA) behaves well:', np.allclose(TrRinvRA, TrRinvRA_dense))

@@ -1,7 +1,8 @@
 from __future__ import print_function, division
 import json
-from simulation import SumstatSimulation
-from estimator import Estimator
+from primitives import SumstatSimulation
+import methods
+from pyutils import fs
 import paths
 
 
@@ -10,8 +11,8 @@ class Estimators(object):
         self.estimators = []
         for e_def in json.load(open(paths.estimator_sets + name + '.json')):
             method_name = e_def['method']; del e_def['method']
-            Nref = e_def['Nref']; del e_def['Nref']
-            self.estimators.append(Estimator(method_name, Nref, **e_def))
+            self.estimators.append(
+                    methods.find_method(method_name)(**e_def))
 
     def __iter__(self):
         return self.estimators.__iter__()
@@ -29,11 +30,20 @@ class Simulations(object):
 
 class Experiment(object):
     def __init__(self, name):
+        self.name = name
         self.__dict__.update(json.load(
             open(paths.experiments + name + '.json')))
         self.estimators = Estimators(self.estimator_set)
         self.simulations = Simulations(self.sim_set)
 
+    def results_folder(self, create=True):
+        path = paths.results + self.name + '/'
+        if create:
+            fs.makedir(path)
+        return path
+
+    def plot_filename(self, sim):
+        return self.results_folder() + sim.readable_name() + '.results.png'
 
 if __name__ == '__main__':
     exp = Experiment('testexp')

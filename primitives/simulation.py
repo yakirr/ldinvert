@@ -1,5 +1,6 @@
 from __future__ import print_function, division
 import json
+import pickle
 from pyutils import fs
 from dataset import Dataset
 import paths
@@ -11,8 +12,19 @@ class SumstatSimulation(object):
         self.__dict__.update(
                 json.load(open(path + name + '.json')))
 
-    def long_name(self):
-        return self.architecture + ',N=' + str(self.sample_size)
+    def __str__(self):
+        result = ''
+        for n in self.__dict__.keys():
+            if '__' not in n:
+                result += n + '\t' + str(self.__dict__[n])
+        return result
+
+    def readable_name(self):
+        return '{},{},h2g={},sample_size={}'.format(
+                self.dataset,
+                self.architecture,
+                self.h2g,
+                self.sample_size)
 
     def path_to_refpanel(self):
         return paths.datasets + self.dataset + '/'
@@ -42,7 +54,10 @@ class SumstatSimulation(object):
         return open(self.path_to_beta(beta_num) +
                 str(index) + '.alphahat', mode)
 
-    # decided that refpanel size is part of the parameters of each method
+    def sumstats_files(self, beta_num):
+        for i in range(1, self.num_samples_per_beta+1):
+            yield pickle.load(self.sumstats_file(beta_num, i))
+
 
 if __name__ == '__main__':
     s = SumstatSimulation('test')

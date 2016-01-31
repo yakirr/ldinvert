@@ -1,6 +1,7 @@
 from __future__ import print_function, division
 import json
 import numpy as np
+import bisect
 import math
 from pybedtools import BedTool
 from pysnptools.snpreader import Bed
@@ -19,6 +20,9 @@ class Dataset(object):
             self.__bedfile = Bed(self.path + self.bfile)[:,:forced_M]
         self.N = self.genotypes_bedfile().iid_count
         self.M = self.genotypes_bedfile().sid_count
+        # chrom 1 starts at chrom_boundaries[0] and ends before chrom_boundaries[1])
+        self.chrom_boundaries = np.searchsorted(self.genotypes_bedfile().pos[:,0],
+                np.arange(23) +1 )
 
     def genotypes_bedfile(self):
         return self.__bedfile
@@ -29,20 +33,47 @@ class Dataset(object):
     def all_snps(self):
         return IntRangeSet((0, self.M))
 
+    def snp_at_distance(self, snp_index, distance_in_morg, break_ties_to_right=True):
+        snp_index = min(snp_index, self.M-1)
+        coords = self.genotypes_bedfile().pos[:,1]
+        chrom = self.genotypes_bedfile().pos[snp_index,0]
+        chrom_coords = coords[self.chrom_boundaries[chrom-1]:self.chrom_boundaries[chrom]]
+
+        if break_ties_to_right:
+            return bisect.bisect_right(chrom_coords,
+                    coords[snp_index] + distance_in_morg) - 1 + self.chrom_boundaries[chrom-1]
+        else:
+            return bisect.bisect_left(chrom_coords,
+                    coords[snp_index] + distance_in_morg) + self.chrom_boundaries[chrom-1]
+
     # buffer_size denotes the desired buffer to add to either side of the disjoint slices
-    def slices(self, start=0, end=None, slice_size=10000, buffer_size=0):
+    def slices(self, start=0, end=None, slice_size=10000):
         if not end: end = self.M
         num_slices = int(math.ceil((end - start) / slice_size))
         for i in xrange(num_slices):
             yield self.get_slice(
-                    i, start=start, end=end, slice_size=slice_size, buffer_size=buffer_size)
+                    i, start=start, end=end, slice_size=slice_size)
 
-    def get_slice(self, slice_index, start=0, end=None, slice_size=10000, buffer_size=0):
+    def get_slice(self, slice_index, start=0, end=None, slice_size=10000):
         if not end: end = self.M
-        bufferless_start = start + slice_index * slice_size
-        bufferless_end = min(start + (slice_index+1)*slice_size, end)
-        return (max(bufferless_start - buffer_size, start),
-                min(bufferless_end + buffer_size, end))
+        candidate_start = start + slice_index * slice_size
+        candidate_end = min(start + (slice_index+1)*slice_size, end)
+        return (max(candidate_start, start),
+                min(candidate_end, end))
+
+    def buffer_around_slice(self, s, buffer_size_morg, start=0, end=None):
+        if not end: end = self.M
+        buffered_start = self.snp_at_distance(s[0], -buffer_size_morg,
+                break_ties_to_right=False)
+        buffered_end = self.snp_at_distance(s[1]-1, buffer_size_morg,
+                break_ties_to_right=True) + 1
+        return (max(buffered_start, start),
+                min(buffered_end, end))
+
+    def buffer_around_snp(self, snp_index, buffer_size_morg, start=0, end=None):
+        return self.buffer_around_slice((snp_index, snp_index+1),
+                buffer_size_morg,
+                start=start, end=end)
 
     def get_standardized_genotypes(self, s, indivs=None):
         if indivs is None:
@@ -65,5 +96,8 @@ if __name__ == '__main__':
     indivs = d.random_indivs(5000)
     print(len(indivs), 'individuals subsampled')
 
-    for s in d.slices(slice_size=300, buffer_size=10):
-        print(d.get_standardized_genotypes(s, indivs=indivs).shape)
+    for s in d.slices(slice_size=300):
+        print('slice', s)
+        bs = d.buffer_around_slice(s, 0.01)
+        print('with buffer:', bs)
+        print('shape:', d.get_standardized_genotypes(bs, indivs=indivs).shape)

@@ -101,11 +101,15 @@ class Estimator(object):
                 '--beta_num', '$LSB_JOBINDEX'] + \
                 self.command_line_params()
         outfilepath = self.results_path_stem(sim, '%I') + '.out'
-        bsub.submit(
-                ['python', '-u', paths.code + 'methods/estimator_manager.py'] + my_args,
-                outfilepath,
-                jobname=self.run_job_name(sim),
-                memory_GB=16)
+        if all([os.path.exists(self.results_path_stem(sim, beta_num))
+            for beta_num in range(1, sim.num_betas+1)]):
+            print('submission unnecessary for', str(self))
+        else:
+            bsub.submit(
+                    ['python', '-u', paths.code + 'methods/estimator_manager.py'] + my_args,
+                    outfilepath,
+                    jobname=self.run_job_name(sim),
+                    memory_GB=16)
 
     @abc.abstractmethod
     def run(self, beta_num, sim): pass

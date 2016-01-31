@@ -8,19 +8,26 @@ from experiment import Experiment
 def find_truth(estimators):
     return [e for e in estimators if e.method() == 'Truth'][0]
 
-def create_plot(exp, sim, estimators, error_lists):
-    mses = ['{:.2e}'.format(np.sum(errors ** 2)) for errors in error_lists]
-    plt.figure()
-    plt.boxplot(error_lists,
-            labels=[
-                e.readable_name().replace(',','\n') + '\n' + mse
-                for e, mse in zip(estimators,mses)],
-            widths=0.75)
-    plt.xticks(rotation=35)
+def create_plot(exp, sim, error_lists):
+    mses = {e:'{:.2e}'.format(np.mean(error_lists[e]**2)) for e in error_lists.keys()}
+    def label(e):
+        return e.readable_name().replace(',','\n') + '\n' + mses[e]
 
-    for i, errors in enumerate(error_lists):
-        x = np.random.normal(1+i, 0.06, size=len(errors))
-        plt.plot(x, errors, 'r.', alpha=0.1)
+    sorted_estimators = sorted(error_lists.keys(), key=lambda e: e.readable_name())
+
+    # create box plots
+    plt.figure()
+    plt.boxplot([error_lists[e] for e in sorted_estimators],
+            labels=[label(e) for e in sorted_estimators],
+            widths=0.75)
+
+    # add individual points with jitter
+    for i, e in enumerate(sorted_estimators):
+        x = np.random.normal(1+i, 0.06, size=len(error_lists[e]))
+        plt.plot(x, error_lists[e], 'r.', alpha=0.1)
+
+    # formatting
+    plt.xticks(rotation=35)
     plt.axhline(y=0)
     plt.title(sim.readable_name())
     fig = plt.gcf()
@@ -39,13 +46,13 @@ if __name__ == '__main__':
 
     def plot_results_for(sim):
         truth = find_truth(exp.estimators)
-        error_lists = []
+        error_lists = {}
         for e in exp.estimators:
             if e == truth: continue
             my_errors = np.empty((0,))
             for beta in range(1, sim.num_betas+1):
                 true_results = truth.results(beta, sim)
                 my_errors = np.append(my_errors, e.results(beta, sim) - true_results)
-            error_lists.append(my_errors)
-        create_plot(exp, sim, exp.estimators, error_lists)
+            error_lists[e] = my_errors
+        create_plot(exp, sim, error_lists)
     map(plot_results_for, exp.simulations)

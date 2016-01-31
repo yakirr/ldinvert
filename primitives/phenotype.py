@@ -40,12 +40,11 @@ class Architecture(object):
     # returns an array that is genome size x num_samples
     def draw_effect_sizes(self, dataset_name, Eh2g, num_samples=1):
         d = Dataset(dataset_name)
-        snp_coords = d.snp_coords()
         total_variance = float(sum([i['total_variance'] for i in self.categories.values()]))
         result = np.zeros((d.M, num_samples))
 
         def add_category_effects((gs, i)):
-            ss = SnpSubset(gs, snp_coords)
+            ss = SnpSubset(gs, d)
             per_snp_variance = \
                     float(Eh2g * i['total_variance']) / (total_variance * ss.num_snps())
             print('size of', gs.name, 'is', ss.num_snps())

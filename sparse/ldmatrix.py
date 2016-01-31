@@ -54,6 +54,7 @@ class LdMatrix(object):
         if output: print('starting symmetrization and conversion to csr')
         self.covcsr = lil_cov.tocsr()
         self.covcsr = self.covcsr + self.covcsr.T
+
         if output: print('took time:', time() - t0)
 
     # the following two functions modify the data in the scipy.sparse.dia_matrix
@@ -116,7 +117,7 @@ if __name__ == '__main__':
     print('shape of R is:', R.covcsr.shape)
 
     # tiny = GenomicSubset('tiny')
-    # tiny_irs = SnpSubset(tiny, d.snp_coords()).irs
+    # tiny_irs = SnpSubset(tiny, d).irs
     tiny_irs = IntRangeSet('300:350')
     RA = LdMatrix(d, indivs, 200, snpset_irs=tiny_irs, output=False)
     b = np.random.randn(d.M)

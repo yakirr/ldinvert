@@ -4,13 +4,14 @@ import argparse
 import pickle
 from estimator import Estimator
 from primitives import Dataset, GenomicSubset, SnpSubset
-from sparse import ldmatrix
+# from sparse import ldmatrix
+from sparse.blockdiag import BlockDiag
 
 
 class Truth(Estimator):
     parser = argparse.ArgumentParser()
-    parser.add_argument('--ld_bandwidth', type=int, required=True,
-            help='the maximal ld bandwidth to allow, in SNPs')
+    parser.add_argument('--ld_bandwidth', type=float, required=True,
+            help='the maximal ld bandwidth to allow, in Morgans')
     parser.add_argument('--region', type=str, required=True,
             help='the name of the subset of the genome whose heritability should be \
                     analyzed. these files are in data/genome_subsets')
@@ -21,22 +22,24 @@ class Truth(Estimator):
                 self.params.ld_bandwidth)
 
     def preprocessing_folder(self):
-        return 'empty'
+        return 'pre.covariance.A={}.Nref=full.ldbandwidth={}'.format(
+                self.params.region,
+                self.params.ld_bandwidth)
+
+    def RA_file(self, sim, mode='rb'):
+        return open(self.path_to_preprocessed_data(sim) + 'RA.bd', mode)
 
     def preprocess(self, sim):
-        pass
+        d = Dataset(sim.dataset)
+        gs = GenomicSubset(self.params.region)
+        ss = SnpSubset(gs, d)
+        RA = BlockDiag.ld_matrix(d, ss.irs, self.params.ld_bandwidth)
+        pickle.dump(RA, self.RA_file(sim, mode='wb'), 2)
 
     def run(self, beta_num, sim):
-        # compute RA
-        d = Dataset(sim.dataset)
-        indivs = np.arange(d.N)
-        ss = SnpSubset(GenomicSubset(self.params.region), d.snp_coords())
-        RA = ldmatrix.LdMatrix(d, indivs, self.params.ld_bandwidth, snpset_irs=ss.irs)
-
-        # compute the results
-        results = []
+        RA = pickle.load(self.RA_file(sim))
         beta = pickle.load(sim.beta_file(beta_num))
-        results.append(beta.dot(RA.covcsr.dot(beta)))
+        beta = BlockDiag.from_big1darray(beta, RA.irs)
+        results = [beta.dot(RA.dot(beta))]
         print(results[-1])
-
         return results

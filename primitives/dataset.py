@@ -1,6 +1,8 @@
 from __future__ import print_function, division
 import json
+import os
 import numpy as np
+import pandas as pd
 import bisect
 import math
 from pybedtools import BedTool
@@ -10,10 +12,14 @@ import paths
 
 
 class Dataset(object):
-    def __init__(self, name, forced_M=None):
+    def __init__(self, name, forced_M=None, chrnum=None):
         self.name = name
         self.__dict__.update(
                 json.load(open(paths.metadata + 'datasets.json'))[name])
+        if chrnum:
+            self.name += '|chr' + str(int(chrnum))
+            self.bfile += '.' + str(int(chrnum))
+
         if forced_M is None:
             self.__bedfile = Bed(self.path + self.bfile)
         else:
@@ -28,10 +34,18 @@ class Dataset(object):
         return self.__bedfile
 
     def snp_coords(self):
-        return BedTool(self.path + self.bfile + '.ucscbed')
+        ucscbedfilename = self.path + self.bfile + '.ucscbed'
+        if os.path.exists(ucscbedfilename):
+            return BedTool(self.path + self.bfile + '.ucscbed')
+        else:
+            print('warning: ucscbedfile not found:', ucscbedfilename)
+            return None
 
     def all_snps(self):
         return IntRangeSet((0, self.M))
+
+    def chromosomes(self):
+        return np.unique(self.genotypes_bedfile().pos[:,0]).astype(np.int16)
 
     def snp_at_distance(self, snp_index, distance_in_morg, break_ties_to_right=True):
         snp_index = min(snp_index, self.M-1)
@@ -85,6 +99,15 @@ class Dataset(object):
 
     def random_indivs(self, Nref, replace=False):
         return np.random.choice(self.N, size=Nref, replace=replace)
+
+    def random_indivs_df(self, Nref, replace=False):
+        indivs = self.random_indivs(Nref, replace=replace)
+        all_indivs = pd.read_csv(self.genotypes_bedfile().filename + '.fam',
+                delim_whitespace=True,
+                header=None,
+                usecols=[0,1])
+        return all_indivs.ix[indivs]
+
 
 if __name__ == '__main__':
     d = Dataset('tinyGERA')

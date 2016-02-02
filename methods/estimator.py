@@ -6,6 +6,7 @@ import pickle
 import os
 import itertools
 from pyutils import fs, bsub
+from primitives import Dataset
 import paths
 
 
@@ -13,11 +14,18 @@ import paths
 #   to the estimator_manager.py class
 class Estimator(object):
     __metaclass__ = abc.ABCMeta
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--refpanel', type=str, required=True,
+            help='the name of the data set to use as reference panel')
+
     def __init__(self, **kwargs):
         if 'command_line_params' in kwargs:
             self.parse_command_line_params(kwargs['command_line_params'])
         else:
             self.params = argparse.Namespace(**kwargs)
+
+        self.refpanel = Dataset(self.params.refpanel)
 
     def method(self):
         return self.__class__.__name__
@@ -43,44 +51,43 @@ class Estimator(object):
 
     # Preprocessing code
     @abc.abstractmethod
-    def preprocessing_folder(self): pass
+    def preprocessing_foldername(self): pass
 
-    def path_to_preprocessed_data(self, sim, create=True):
-        path = sim.path_to_refpanel() + self.preprocessing_folder() + '/'
+    def path_to_preprocessed_data(self, create=True):
+        path = self.refpanel.path + self.preprocessing_foldername() + '/'
         if create:
             fs.makedir(path)
         return path
 
-    def preprocess_job_name(self, sim):
-        return 'preprocess-{}-{}-{}'.format(
-                self.method(), self.params_str(), sim.name)
+    def preprocess_job_name(self):
+        return 'preprocess-{}-{}'.format(
+                self.method(), self.params_str())
 
-    def preprocess_submitted(self, sim):
-        return os.path.isfile(self.path_to_preprocessed_data(sim) + '.submitted')
+    def preprocess_submitted(self):
+        return os.path.isfile(self.path_to_preprocessed_data() + '.submitted')
 
-    def declare_preprocess_submitted(self, sim):
-        f = open(self.path_to_preprocessed_data(sim) + '.submitted', 'w')
+    def declare_preprocess_submitted(self):
+        f = open(self.path_to_preprocessed_data() + '.submitted', 'w')
         f.close()
 
-    def submit_preprocess(self, sim):
-        if not self.preprocess_submitted(sim):
-            print(str(self), 'pre-processing', sim.name)
-            my_args = ['--sim_name', sim.name,
-                    '--method_name', self.method(),
+    def submit_preprocess(self):
+        if not self.preprocess_submitted():
+            print(str(self), 'pre-processing')
+            my_args = ['--method_name', self.method(),
                     'preprocess'] + \
                     self.command_line_params()
-            outfilepath = self.path_to_preprocessed_data(sim) + '.preprocessing.out'
+            outfilepath = self.path_to_preprocessed_data() + '.preprocessing.out'
             bsub.submit(
                     ['python', '-u', paths.code + 'methods/estimator_manager.py'] + my_args,
                     outfilepath,
-                    jobname=self.preprocess_job_name(sim),
+                    jobname=self.preprocess_job_name(),
                     memory_GB=16)
-            self.declare_preprocess_submitted(sim)
+            self.declare_preprocess_submitted()
         else:
-            print(str(self), ': pre-processing unnecessary for', sim.name)
+            print(str(self), ': pre-processing unnecessary')
 
     @abc.abstractmethod
-    def preprocess(self, sim): pass
+    def preprocess(self): pass
 
     # Running code
     def results_name(self):
@@ -93,16 +100,16 @@ class Estimator(object):
         return 'run-{}-{}-{}[1-{}]'.format(
                 self.method(), self.params_str(), sim.name, sim.num_betas)
 
-    def submit_runs(self, sim):
+    def submit_runs(self, sim, overwrite=False):
         print('\n' + str(self), 'submitting', sim.name)
-        my_args = ['--sim_name', sim.name,
-                '--method_name', self.method(),
+        my_args = ['--method_name', self.method(),
                 'run',
+                '--sim_name', sim.name,
                 '--beta_num', '$LSB_JOBINDEX'] + \
                 self.command_line_params()
         outfilepath = self.results_path_stem(sim, '%I') + '.out'
         if all([os.path.exists(self.results_path_stem(sim, beta_num))
-            for beta_num in range(1, sim.num_betas+1)]):
+            for beta_num in range(1, sim.num_betas+1)]) and not overwrite:
             print('submission unnecessary for', str(self))
         else:
             bsub.submit(

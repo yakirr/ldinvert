@@ -44,7 +44,7 @@ class Architecture(object):
         result = np.zeros((d.M, num_samples))
 
         def add_category_effects((gs, i)):
-            ss = SnpSubset(gs, d)
+            ss = SnpSubset(d, bedtool=gs.bedtool)
             per_snp_variance = \
                     float(Eh2g * i['total_variance']) / (total_variance * ss.num_snps())
             print('size of', gs.name, 'is', ss.num_snps())

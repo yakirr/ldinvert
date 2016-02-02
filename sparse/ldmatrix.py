@@ -117,7 +117,7 @@ if __name__ == '__main__':
     print('shape of R is:', R.covcsr.shape)
 
     # tiny = GenomicSubset('tiny')
-    # tiny_irs = SnpSubset(tiny, d).irs
+    # tiny_irs = SnpSubset(d, bedtool=tiny.bedtool).irs
     tiny_irs = IntRangeSet('300:350')
     RA = LdMatrix(d, indivs, 200, snpset_irs=tiny_irs, output=False)
     b = np.random.randn(d.M)

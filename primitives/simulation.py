@@ -26,11 +26,11 @@ class SumstatSimulation(object):
                 self.h2g,
                 self.sample_size)
 
-    def path_to_refpanel(self):
+    def path_to_genotypes(self):
         return paths.datasets + self.dataset + '/'
 
     def path(self, create=True):
-        path = self.path_to_refpanel() + self.name + '/'
+        path = self.path_to_genotypes() + self.name + '/'
         if create:
             fs.makedir(path)
         return path

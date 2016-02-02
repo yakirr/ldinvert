@@ -1,11 +1,13 @@
 import inspect
 import testmethod
 import ldinvert
+import ldscore
 import truth
 
 allmethods = inspect.getmembers(testmethod, inspect.isclass) + \
     inspect.getmembers(ldinvert, inspect.isclass) + \
-    inspect.getmembers(truth, inspect.isclass)
+    inspect.getmembers(truth, inspect.isclass) + \
+    inspect.getmembers(ldscore, inspect.isclass)
 
 def find_method(name):
     for n, m in allmethods:

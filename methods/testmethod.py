@@ -4,18 +4,15 @@ from estimator import Estimator
 
 
 class TestMethodTypeA(Estimator):
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--Nref', type=int, required=True,
-            help='the size of the reference panel to use')
+    parser = argparse.ArgumentParser(add_help=False, parents=[Estimator.parser])
     parser.add_argument('--myparam', type=float, required=True,
             help='the value of the magical thing!')
 
-    def preprocessing_folder(self):
-        return 'preprocessing.Nref={}.testpreprocess'.format(
-                self.params.Nref)
+    def preprocessing_foldername(self):
+        return 'preprocessing.testpreprocess'
 
-    def preprocess(self, sim):
-        print('TestMethod is preprocessing', sim.name, 'with Nref=', self.params.Nref)
+    def preprocess(self):
+        print('TestMethod is preprocessing with refpanel=', self.params.refpanel)
 
     def run(self, beta_num, sim):
         print('TestMethodTypeA is running on', sim.name, beta_num, 'with')

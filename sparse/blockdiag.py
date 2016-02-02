@@ -173,7 +173,7 @@ if __name__ == '__main__':
     d = Dataset('GERA', forced_M=args.M)
     indivs = d.random_indivs(200)
     tiny_gs = GenomicSubset('50')
-    tiny_ss = SnpSubset(tiny_gs, d)
+    tiny_ss = SnpSubset(d, bedtool=tiny_gs.bedtool)
     tiny_buffered_ss = tiny_ss.expanded_by(0.01)
 
     t0 = time()

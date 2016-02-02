@@ -18,8 +18,8 @@ def create_plot(exp, sim, error_lists):
     # create box plots
     plt.figure()
     plt.boxplot([error_lists[e] for e in sorted_estimators],
-            labels=[label(e) for e in sorted_estimators],
-            widths=0.75)
+        labels=[label(e) for e in sorted_estimators],
+        widths=0.75)
 
     # add individual points with jitter
     for i, e in enumerate(sorted_estimators):
@@ -31,7 +31,7 @@ def create_plot(exp, sim, error_lists):
     plt.axhline(y=0)
     plt.title(sim.readable_name())
     fig = plt.gcf()
-    fig.set_size_inches(8, 8)
+    fig.set_size_inches(len(error_lists.keys()) * 1.5, 8)
     fig.subplots_adjust(bottom=0.25)
     fig.savefig(exp.plot_filename(sim), dpi=400)
     plt.show()

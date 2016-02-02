@@ -9,9 +9,7 @@ from sparse.blockdiag import BlockDiag
 
 
 class MLE(Estimator):
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--Nref', type=int, required=True,
-            help='the size of the reference panel to use')
+    parser = argparse.ArgumentParser(add_help=False, parents=[Estimator.parser])
     parser.add_argument('--ld_bandwidth', type=float, required=True,
             help='the maximal ld bandwidth to allow, in Morgans')
     parser.add_argument('--region', type=str, required=True,
@@ -19,86 +17,57 @@ class MLE(Estimator):
                     analyzed. these files are in data/genome_subsets')
 
     def readable_name(self):
-        return 'MLE,A={},Nref={},ldband={}'.format(
+        return 'MLE,A={},ref={},ldband={}'.format(
                 self.params.region,
-                self.params.Nref,
+                self.params.refpanel,
                 self.params.ld_bandwidth)
 
-    def preprocessing_folder(self):
-        return 'pre.covariance.A={}.Nref={}.ldbandwidth={}'.format(
+    def preprocessing_foldername(self):
+        return 'pre.covariance.A={}.ldbandwidth={}'.format(
                 self.params.region,
-                self.params.Nref,
                 self.params.ld_bandwidth)
 
-    def R_file(self, sim, mode='rb'):
-        return open(self.path_to_preprocessed_data(sim) + 'R.bd', mode)
+    def R_file(self, mode='rb'):
+        return open(self.path_to_preprocessed_data() + 'R.bd', mode)
 
-    def RA_file(self, sim, mode='rb'):
-        return open(self.path_to_preprocessed_data(sim) + 'RA.bd', mode)
+    def RA_file(self, mode='rb'):
+        return open(self.path_to_preprocessed_data() + 'RA.bd', mode)
 
-    def preprocess(self, sim):
-        np.random.seed(0) # to make sure it's the same reference panel every time
-        d = Dataset(sim.dataset)
-        indivs = d.random_indivs(self.params.Nref)
+    def preprocess(self):
         gs = GenomicSubset(self.params.region)
-        ss = SnpSubset(gs, d)
+        ss = SnpSubset(self.refpanel, bedtool=gs.bedtool)
         buffered_ss = ss.expanded_by(self.params.ld_bandwidth)
-        R = BlockDiag.ld_matrix(d, buffered_ss.irs, self.params.ld_bandwidth, indivs=indivs)
+        R = BlockDiag.ld_matrix(self.refpanel, buffered_ss.irs, self.params.ld_bandwidth)
         RA = R.zero_outside_irs(ss.irs)
-        pickle.dump(R, self.R_file(sim, mode='wb'), 2)
-        pickle.dump(RA, self.RA_file(sim, mode='wb'), 2)
+        pickle.dump(R, self.R_file(mode='wb'), 2)
+        pickle.dump(RA, self.RA_file(mode='wb'), 2)
 
     def run(self, beta_num, sim):
-        R = pickle.load(self.R_file(sim))
-        RA = pickle.load(self.RA_file(sim))
+        R = pickle.load(self.R_file())
+        RA = pickle.load(self.RA_file())
 
         # compute the results
         results = []
         for alphahat in sim.sumstats_files(beta_num):
             alphahat = BlockDiag.from_big1darray(alphahat, R.irs)
             results.append(self.compute_statistic(
-                alphahat, R, RA, sim.sample_size, self.params.Nref, memoize=True))
+                alphahat, R, RA, sim.sample_size, self.refpanel.N, memoize=True))
             print(len(results), results[-1])
 
         return results
 
     def compute_statistic(self, alphahat, R, RA, N, Nref, memoize=False):
-        if not memoize or not hasattr(self, 'bias'):
-            print('computing bias')
-            self.bias = BlockDiag.solve(R, RA).trace() / N
-            print('bias =', self.bias)
-        betahat = BlockDiag.solve(R, alphahat)
-        return betahat.dot(RA.dot(betahat)) - self.bias
+        try:
+            if not memoize or not hasattr(self, 'bias'):
+                print('computing bias')
+                self.bias = BlockDiag.solve(R, RA).trace() / N
+                print('bias =', self.bias)
+            betahat = BlockDiag.solve(R, alphahat)
+            return betahat.dot(RA.dot(betahat)) - self.bias
+        except np.linalg.linalg.LinAlgError:
+            print('R was singular. Its shape was', R.shape(), 'and Nref=', Nref)
+            return 0
 
-    # def run(self, beta_num, sim):
-    #     # compute RA from reference panel
-    #     np.random.seed(0) # to make sure it's the same reference panel every time
-    #     d = Dataset(sim.dataset)
-    #     indivs = d.random_indivs(self.params.Nref)
-    #     gs = GenomicSubset(self.params.region)
-    #     ss = SnpSubset(gs, d)
-    #     RA = ldmatrix.LdMatrix(d, indivs, self.params.ld_bandwidth, snpset_irs=ss.irs)
-    #     # R = pickle.load(self.covariance_ldmatrix_file(sim))
-    #     gs.expand_by(1)
-    #     ss_expanded = SnpSubset(gs, d)
-    #     R = ldmatrix.LdMatrix(d, indivs, self.params.ld_bandwidth, snpset_irs=ss_expanded.irs)
-
-    #     # compute the results
-    #     results = []
-    #     for alphahat in sim.sumstats_files(beta_num):
-    #         results.append(self.compute_statistic(
-    #             alphahat, R, RA, sim.sample_size, self.params.Nref, memoize=True))
-    #         print(len(results), results[-1])
-
-    #     return results
-
-    # def compute_statistic(self, alphahat, R, RA, N, Nref, memoize=False):
-    #     if not memoize or not hasattr(self, 'bias'):
-    #         print('computing bias')
-    #         self.bias = R.trace_of_inverse_times_matrix(RA) / N
-    #         print('bias =', self.bias)
-    #     betahat = R.solve_banded(alphahat)
-    #     return betahat.dot(RA.covcsr.dot(betahat)) - self.bias
 
 class MLE_reg(MLE):
     parser = argparse.ArgumentParser(add_help=False, parents=[MLE.parser])
@@ -106,9 +75,9 @@ class MLE_reg(MLE):
             help='the value of lambda by which to regularize LD estimates')
 
     def readable_name(self):
-        return 'MLEreg,A={},Nref={},ldband={},L={}'.format(
+        return 'MLEreg,A={},ref={},ldband={},L={}'.format(
                 self.params.region,
-                self.params.Nref,
+                self.params.refpanel,
                 self.params.ld_bandwidth,
                 self.params.Lambda)
 
@@ -123,14 +92,41 @@ class MLE_reg(MLE):
         betahat = BlockDiag.solve(Rreg, alphahat)
         return betahat.dot(RA.dot(betahat)) - self.bias
 
-    # def compute_statistic(self, alphahat, R, RA, N, Nref, memoize=False):
-    #     #TODO: should we regularize RA?
-    #     if not memoize or not hasattr(self, 'bias'):
-    #         print('regularizing R...')
-    #         R.add_ridge_and_renormalize(self.params.Lambda)
-    #         print('done.computing bias...')
-    #         self.bias = R.trace_of_inverse_times_matrix(RA) / N
-    #         print('bias =', self.bias)
-    #     betahat = R.solve_banded(alphahat)
-    #     return betahat.dot(RA.covcsr.dot(betahat)) - self.bias
 
+# version of MLE_reg that doesn't band when estimating LD around a category.
+class MLE_reg_noband(MLE_reg):
+    def readable_name(self):
+        return 'MLE_reg_noband,A={},ref={},ldband={}'.format(
+                self.params.region,
+                self.params.refpanel,
+                self.params.ld_bandwidth)
+
+    def preprocessing_foldername(self):
+        return 'pre.unbanded_covariance.A={}.ldbandwidth={}'.format(
+                self.params.region,
+                self.params.ld_bandwidth)
+
+    def preprocess(self):
+        gs = GenomicSubset(self.params.region)
+        ss = SnpSubset(self.refpanel, bedtool=gs.bedtool)
+        buffered_ss = ss.expanded_by(self.params.ld_bandwidth)
+        R = BlockDiag.ld_matrix(self.refpanel, buffered_ss.irs, 1000000) # bandwidth=infty
+        RA = R.zero_outside_irs(ss.irs)
+        pickle.dump(R, self.R_file(mode='wb'), 2)
+        pickle.dump(RA, self.RA_file(mode='wb'), 2)
+
+
+if __name__ == '__main__':
+    import primitives.genome, primitives.simulation, primitives.dataset
+    reload(primitives.genome)
+    reload(primitives.simulation)
+    reload(primitives.dataset)
+    from primitives.genome import GenomicSubset, SnpSubset
+    from primitives.simulation import SumstatSimulation
+    from primitives.dataset import Dataset
+    est = MLE(refpanel='tinyGERA_ref14k', region='tiny', ld_bandwidth=0.01)
+    # est = MLE_reg_noband(refpanel='tinyGERA_ref2k', region='tiny', ld_bandwidth=0.01,
+            # Lambda=0.01)
+    sim = SumstatSimulation('tinyGERA.tiny_inf')
+    # est.preprocess()
+    est.run(1, sim)

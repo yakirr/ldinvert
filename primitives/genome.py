@@ -74,13 +74,8 @@ class SnpSubset(object):
     def expand_by(self, expansion_in_each_direction, units='Morgans'):
         result = IntRangeSet()
         for r in self.irs.ranges():
-            if units == 'Mb':
-                #TODO: this doesn't work. Needs data set to implement Mb units alongside
-                #   Morgans units
-                result += (max(0, r[0] - int(10**6 * expansion_in_each_direction)),
-                    r[1] + int(10**6 * expansion_in_each_direction))
-            elif units == 'Morgans':
-                result += self.dataset.buffer_around_slice(r, expansion_in_each_direction)
+                result += self.dataset.buffer_around_slice(
+                        r, expansion_in_each_direction, units=units)
         self.irs = result
 
     def expanded_by(self, expansion_in_each_direction, units='Morgans'):

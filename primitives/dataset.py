@@ -47,9 +47,18 @@ class Dataset(object):
     def chromosomes(self):
         return np.unique(self.genotypes_bedfile().pos[:,0]).astype(np.int16)
 
-    def snp_at_distance(self, snp_index, distance_in_morg, break_ties_to_right=True):
+    def snp_at_distance(self, snp_index, distance_in_morg, break_ties_to_right=True,
+            units='Morgans'):
+        if units == 'Morgans':
+            i = 1
+        elif units == 'bp':
+            i = 2
+        else:
+            print('ERROR: units must be either Morgans or bp')
+            return None
+
         snp_index = min(snp_index, self.M-1)
-        coords = self.genotypes_bedfile().pos[:,1]
+        coords = self.genotypes_bedfile().pos[:,i]
         chrom = self.genotypes_bedfile().pos[snp_index,0]
         chrom_coords = coords[self.chrom_boundaries[chrom-1]:self.chrom_boundaries[chrom]]
 
@@ -75,19 +84,21 @@ class Dataset(object):
         return (max(candidate_start, start),
                 min(candidate_end, end))
 
-    def buffer_around_slice(self, s, buffer_size_morg, start=0, end=None):
+    def buffer_around_slice(self, s, buffer_size_morg, start=0, end=None, units='Morgans'):
         if not end: end = self.M
         buffered_start = self.snp_at_distance(s[0], -buffer_size_morg,
-                break_ties_to_right=False)
+                break_ties_to_right=False, units=units)
         buffered_end = self.snp_at_distance(s[1]-1, buffer_size_morg,
-                break_ties_to_right=True) + 1
+                break_ties_to_right=True, units=units) + 1
         return (max(buffered_start, start),
                 min(buffered_end, end))
 
-    def buffer_around_snp(self, snp_index, buffer_size_morg, start=0, end=None):
+    def buffer_around_snp(self, snp_index, buffer_size_morg, start=0, end=None,
+            units='Morgans'):
         return self.buffer_around_slice((snp_index, snp_index+1),
                 buffer_size_morg,
-                start=start, end=end)
+                start=start, end=end,
+                units=units)
 
     def get_standardized_genotypes(self, s, indivs=None):
         if indivs is None:
@@ -121,6 +132,7 @@ if __name__ == '__main__':
 
     for s in d.slices(slice_size=300):
         print('slice', s)
-        bs = d.buffer_around_slice(s, 0.01)
+        bs = d.buffer_around_slice(s, 10000, units='bp')
         print('with buffer:', bs)
         print('shape:', d.get_standardized_genotypes(bs, indivs=indivs).shape)
+        print(d.genotypes_bedfile().pos[bs[0],2], d.genotypes_bedfile().pos[s[0],2])

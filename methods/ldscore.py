@@ -91,6 +91,7 @@ class LDSC(Estimator):
 
         results = []
         for alphahat in sim.sumstats_files(beta_num):
+            alphahat = d.N * alphahat ** 2
             hsqhat = ldsc.ldscore.regressions.Hsq(
                     alphahat.reshape((d.M,1)),
                     ref_ldscores,

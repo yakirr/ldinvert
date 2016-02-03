@@ -112,7 +112,7 @@ class BlockDiag(object):
         self.ranges_to_arrays[r][~mask] = 0
         self.ranges_to_arrays[r].T[~mask] = 0 # done this way for compatibility with 1d arrays
 
-    # create a copy of this BDM restricted to a set of ranges.
+    # zero out this BDM outside a set of ranges
     def zero_outside_irs(self, other_intrangeset):
         for r in self.ranges():
             self.__zero_block_outside_irs(
@@ -140,8 +140,9 @@ class BlockDiag(object):
                 for r, A in self.ranges_to_arrays.items()
             })
 
-    # assumes all the arrays are 1-d
+    # assumes all the arrays are 2-d. TODO: change that
     def plot(self, outfile):
+        import matplotlib
         pass #TODO: implement
 
 

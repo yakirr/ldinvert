@@ -1,5 +1,6 @@
 from __future__ import print_function, division
 import numpy as np
+import matplotlib
 import argparse
 import pickle
 from estimator import Estimator
@@ -28,11 +29,15 @@ class Truth(Estimator):
 
     def RA_file(self, mode='rb'):
         return open(self.path_to_preprocessed_data() + 'RA.bd', mode)
+    def RA_plotfilename(self):
+        return self.path_to_preprocessed_data() + 'RA.png'
 
     def preprocess(self):
+        matplotlib.use('Agg')
         gs = GenomicSubset(self.params.region)
         ss = SnpSubset(self.refpanel, bedtool=gs.bedtool)
         RA = BlockDiag.ld_matrix(self.refpanel, ss.irs, self.params.ld_bandwidth)
+        RA.plot(ss.irs, filename=self.RA_plotfilename())
         pickle.dump(RA, self.RA_file(mode='wb'), 2)
 
     def run(self, beta_num, sim):

@@ -55,4 +55,6 @@ if __name__ == '__main__':
                 my_errors = np.append(my_errors, e.results(beta, sim) - true_results)
             error_lists[e] = my_errors
         create_plot(exp, sim, error_lists)
+        with open(exp.purpose_filename()) as outfile:
+            outfile.write(exp.purpose)
     map(plot_results_for, exp.simulations)

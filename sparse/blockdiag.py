@@ -1,6 +1,7 @@
 from __future__ import print_function, division
 import numpy as np
 import copy
+import math
 import pysnptools.util as psutil
 from pysnptools.util import IntRangeSet
 from pyutils import iter as it
@@ -58,7 +59,7 @@ class BlockDiag(object):
         return copy.deepcopy(self)
 
     def ranges(self):
-        return self.irs.ranges()
+        return sorted([r for r in self.irs.ranges()])
 
     def to_dense(self, ignore_ranges=True):
         if not ignore_ranges:
@@ -132,7 +133,7 @@ class BlockDiag(object):
         else:
             return sum(result_ranges_to_arrays.values())
 
-    # adds lambda I to the diagonals of everything
+    # returns a copy in which lambda*I has beed added to everything
     def add_ridge(self, Lambda, renormalize=False):
         normalization = 1 + Lambda if renormalize else 1
         return BlockDiag({
@@ -141,9 +142,40 @@ class BlockDiag(object):
             })
 
     # assumes all the arrays are 2-d. TODO: change that
-    def plot(self, outfile):
-        import matplotlib
-        pass #TODO: implement
+    def plot(self, irs_to_mark, filename=None):
+        import matplotlib.pyplot as plt
+        rows = int(math.ceil(math.sqrt(len(self.ranges()))))
+        cols = int(math.ceil(len(self.ranges()) / rows))
+        fig, axes = plt.subplots(nrows=rows, ncols=cols)
+        for i,(r, A) in enumerate(self.ranges_to_arrays.items()):
+            # import pdb; pdb.set_trace()
+            width = r[1] - r[0]
+            ax = axes[int(i/rows), i % rows]
+            ax.matshow(A, vmin=-1, vmax=1)
+            # import pdb; pdb.set_trace()
+            my_intrangeset = IntRangeSet(r)
+            intersection = my_intrangeset & irs_to_mark
+            def draw_line(xs, ys):
+                ax.plot(xs, ys, transform=ax.transAxes, lw=0.2, color='k')
+
+            for s in intersection.ranges():
+                draw_line([(s[0] - r[0])/width, (s[0] - r[0])/width],
+                        [0, 1])
+                draw_line([(s[1] - r[0])/width, (s[1] - r[0])/width],
+                        [0, 1])
+                draw_line([0,1],
+                        [(r[1] - s[0])/width, (r[1] - s[0])/width])
+                draw_line([0,1],
+                        [(r[1] - s[1])/width, (r[1] - s[1])/width])
+            ax.set_xticks([0,width]); ax.set_yticks([0,width])
+            ax.set_xlim(0,width); ax.set_ylim(width, 0)
+            ax.set_title(str(r))
+
+        fig.set_size_inches(axes.shape[0] * 3, axes.shape[1]*4)
+        if filename:
+            fig.savefig(filename, dpi=400)
+        else:
+            fig.show()
 
 
     # assumes the both arrays have the exact same set of ranges

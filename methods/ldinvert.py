@@ -1,5 +1,6 @@
 from __future__ import print_function, division
 import numpy as np
+import matplotlib
 import argparse
 import pickle
 from estimator import Estimator
@@ -29,16 +30,20 @@ class MLE(Estimator):
 
     def R_file(self, mode='rb'):
         return open(self.path_to_preprocessed_data() + 'R.bd', mode)
+    def R_plotfilename(self):
+        return self.path_to_preprocessed_data() + 'R.png'
 
     def RA_file(self, mode='rb'):
         return open(self.path_to_preprocessed_data() + 'RA.bd', mode)
 
     def preprocess(self):
+        matplotlib.use('Agg')
         gs = GenomicSubset(self.params.region)
         ss = SnpSubset(self.refpanel, bedtool=gs.bedtool)
         buffered_ss = ss.expanded_by(self.params.ld_bandwidth / 100.)
         R = BlockDiag.ld_matrix(self.refpanel, buffered_ss.irs, self.params.ld_bandwidth)
         pickle.dump(R, self.R_file(mode='wb'), 2)
+        R.plot(ss.irs, filename=self.R_plotfilename())
         RA = R.zero_outside_irs(ss.irs)
         pickle.dump(RA, self.RA_file(mode='wb'), 2)
 
@@ -97,7 +102,7 @@ class MLE_reg(MLE):
 class MLE_reg_noband(MLE_reg):
     parser = argparse.ArgumentParser(add_help=False, parents=[MLE_reg.parser])
     parser.add_argument('--units', type=str, required=True,
-            help='either cM or bp. Sets how the estimator chooses to draw the LD \
+            help='either mM or bp. Sets how the estimator chooses to draw the LD \
                     window around the category')
 
     def readable_name(self):
@@ -115,16 +120,20 @@ class MLE_reg_noband(MLE_reg):
                 self.params.units)
 
     def preprocess(self):
-        if self.params.units == 'cM':
+        matplotlib.use('Agg')
+        if self.params.units == 'mM':
             units = 'Morgans'
-            bandwidth = self.params.ld_bandwidth / 100.
-        else:
+            bandwidth = self.params.ld_bandwidth / 1000.
+        elif self.params.units == 'bp':
             units = 'bp'
             bandwidth = self.params.ld_bandwidth
+        else:
+            print('ERROR: units must be either mM or bp')
         gs = GenomicSubset(self.params.region)
         ss = SnpSubset(self.refpanel, bedtool=gs.bedtool)
         buffered_ss = ss.expanded_by(bandwidth, units=units)
         R = BlockDiag.ld_matrix(self.refpanel, buffered_ss.irs, 1000000) # bandwidth=infty
+        R.plot(ss.irs, filename=self.R_plotfilename())
         pickle.dump(R, self.R_file(mode='wb'), 2)
         RA = R.zero_outside_irs(ss.irs)
         pickle.dump(RA, self.RA_file(mode='wb'), 2)

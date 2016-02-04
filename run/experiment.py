@@ -45,6 +45,9 @@ class Experiment(object):
     def plot_filename(self, sim):
         return self.results_folder() + sim.readable_name() + '.results.png'
 
+    def purpose_filename(self):
+        return self.results_folder() + 'purpose.txt'
+
 if __name__ == '__main__':
     exp = Experiment('testexp')
     ests = Estimators(exp.estimator_set)

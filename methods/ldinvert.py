@@ -12,7 +12,7 @@ from sparse.blockdiag import BlockDiag
 class MLE(Estimator):
     parser = argparse.ArgumentParser(add_help=False, parents=[Estimator.parser])
     parser.add_argument('--ld_bandwidth', type=int, required=True,
-            help='the maximal ld bandwidth to allow, in cM')
+            help='the maximal ld bandwidth to allow, in mM')
     parser.add_argument('--region', type=str, required=True,
             help='the name of the subset of the genome whose heritability should be \
                     analyzed. these files are in data/genome_subsets')
@@ -40,8 +40,8 @@ class MLE(Estimator):
         matplotlib.use('Agg')
         gs = GenomicSubset(self.params.region)
         ss = SnpSubset(self.refpanel, bedtool=gs.bedtool)
-        buffered_ss = ss.expanded_by(self.params.ld_bandwidth / 100.)
-        R = BlockDiag.ld_matrix(self.refpanel, buffered_ss.irs, self.params.ld_bandwidth)
+        buffered_ss = ss.expanded_by(self.params.ld_bandwidth / 1000.)
+        R = BlockDiag.ld_matrix(self.refpanel, buffered_ss.irs, self.params.ld_bandwidth / 1000.)
         pickle.dump(R, self.R_file(mode='wb'), 2)
         R.plot(ss.irs, filename=self.R_plotfilename())
         RA = R.zero_outside_irs(ss.irs)
@@ -137,6 +137,27 @@ class MLE_reg_noband(MLE_reg):
         pickle.dump(R, self.R_file(mode='wb'), 2)
         RA = R.zero_outside_irs(ss.irs)
         pickle.dump(RA, self.RA_file(mode='wb'), 2)
+
+
+class MLE_rnb_biasadjusted(MLE_reg_noband):
+    def readable_name(self):
+        return 'MLE_rnb,A={},ref={},ldband={},L={},units={}'.format(
+                self.params.region,
+                self.params.refpanel,
+                self.params.ld_bandwidth,
+                self.params.Lambda,
+                self.params.units)
+
+    def compute_statistic(self, alphahat, R, RA, N, Nref, memoize=False):
+        #TODO: should we regularize RA?
+        print('regularizing R...')
+        Rreg = R.add_ridge(self.params.Lambda, renormalize=True)
+        if not memoize or not hasattr(self, 'bias'):
+            print('done.computing bias...')
+            self.bias = BlockDiag.solve(Rreg, RA, N_to_adjust_for=Nref).trace() / N
+            print('bias =', self.bias)
+        betahat = BlockDiag.solve(Rreg, alphahat, N_to_adjust_for=Nref)
+        return betahat.dot(RA.dot(betahat)) - self.bias
 
 
 if __name__ == '__main__':

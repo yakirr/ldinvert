@@ -5,9 +5,6 @@ import matplotlib.pyplot as plt
 from experiment import Experiment
 
 
-def find_truth(estimators):
-    return [e for e in estimators if e.method() == 'Truth'][0]
-
 def create_plot(exp, sim, error_lists):
     mses = {e:'{:.2e}'.format(np.mean(error_lists[e]**2)) for e in error_lists.keys()}
     def label(e):
@@ -45,16 +42,14 @@ if __name__ == '__main__':
     exp = Experiment(args.exp_name)
 
     def plot_results_for(sim):
-        truth = find_truth(exp.estimators)
         error_lists = {}
         for e in exp.estimators:
-            if e == truth: continue
             my_errors = np.empty((0,))
             for beta in range(1, sim.num_betas+1):
-                true_results = truth.results(beta, sim)
+                true_results = exp.truth.results(beta, sim)
                 my_errors = np.append(my_errors, e.results(beta, sim) - true_results)
             error_lists[e] = my_errors
         create_plot(exp, sim, error_lists)
-        with open(exp.purpose_filename()) as outfile:
+        with open(exp.purpose_filename(), 'w') as outfile:
             outfile.write(exp.purpose)
     map(plot_results_for, exp.simulations)

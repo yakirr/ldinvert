@@ -1,4 +1,5 @@
 from __future__ import print_function, division
+import itertools
 import json
 from primitives import SumstatSimulation
 import methods
@@ -7,15 +8,18 @@ import paths
 
 
 class Estimators(object):
-    def __init__(self, name):
+    def __init__(self, estimators_json):
         self.estimators = []
-        for e_def in json.load(open(paths.estimator_sets + name + '.json')):
-            method_name = e_def['method']; del e_def['method']
-            self.estimators.append(
-                    methods.find_method(method_name)(**e_def))
+        for e_def in estimators_json:
+            self.estimators.append(Estimators.create_estimator_from_json(e_def))
 
     def __iter__(self):
         return self.estimators.__iter__()
+
+    @classmethod
+    def create_estimator_from_json(cls, json_entry):
+        method_name = json_entry['method']; del json_entry['method']
+        return methods.find_method(method_name)(**json_entry)
 
 
 class Simulations(object):
@@ -33,7 +37,8 @@ class Experiment(object):
         self.name = name
         self.__dict__.update(json.load(
             open(paths.experiments + name + '.json')))
-        self.estimators = Estimators(self.estimator_set)
+        self.estimators = Estimators(self.estimators)
+        self.truth = Estimators.create_estimator_from_json(self.truth)
         self.simulations = Simulations(self.sim_set)
 
     def results_folder(self, create=True):
@@ -48,11 +53,12 @@ class Experiment(object):
     def purpose_filename(self):
         return self.results_folder() + 'purpose.txt'
 
-if __name__ == '__main__':
-    exp = Experiment('testexp')
-    ests = Estimators(exp.estimator_set)
-    sims = Simulations(exp.sim_set)
+    def estimators_and_truth(self):
+        return itertools.chain(self.estimators, [self.truth])
 
-    for s in sims:
-        for e in ests:
+if __name__ == '__main__':
+    exp = Experiment('2016.02.04_ldinvert_Rbiasadjustment')
+
+    for s in exp.simulations:
+        for e in exp.estimators_and_truth():
             print(str(e), str(s.name))

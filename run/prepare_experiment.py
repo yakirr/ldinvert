@@ -11,5 +11,5 @@ if __name__ == '__main__':
 
     exp = Experiment(args.exp_name)
 
-    for e in exp.estimators:
+    for e in exp.estimators_and_truth():
         e.submit_preprocess()

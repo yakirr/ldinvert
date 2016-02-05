@@ -116,8 +116,9 @@ class Estimator(object):
                     ['python', '-u', paths.code + 'methods/estimator_manager.py'] + my_args,
                     outfilepath,
                     jobname=self.run_job_name(sim),
-                    queue='short',
-                    memory_GB=4)
+                    queue='mini',
+                    time_in_minutes=10,
+                    memory_GB=2)
 
     @abc.abstractmethod
     def run(self, beta_num, sim): pass

@@ -179,12 +179,19 @@ class BlockDiag(object):
 
 
     # assumes the both arrays have the exact same set of ranges
+    # if N_to_adjust_for is not None, then this bias-adjusts the inverse as if
+    # the matrix being inverted is a covariance matrix estimated from a sample of size N
     @staticmethod
-    def solve(A, b):
+    def solve(A, b, N_to_adjust_for=None):
         result_ranges_to_arrays = {
                 r:np.linalg.solve(A.ranges_to_arrays[r], b.ranges_to_arrays[r])
                 for r in A.ranges()
                 }
+        if N_to_adjust_for:
+            for r in result_ranges_to_arrays.keys():
+                bias_adjustment = \
+                    (N_to_adjust_for-result_ranges_to_arrays[r].shape[0]-1)/N_to_adjust_for
+                result_ranges_to_arrays[r] *= bias_adjustment
         return BlockDiag(result_ranges_to_arrays)
 
     @staticmethod

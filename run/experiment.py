@@ -19,14 +19,15 @@ class Estimators(object):
     @classmethod
     def create_estimator_from_json(cls, json_entry):
         method_name = json_entry['method']; del json_entry['method']
+        print(method_name)
         return methods.find_method(method_name)(**json_entry)
 
 
 class Simulations(object):
-    def __init__(self, name):
+    def __init__(self, simulation_names):
         self.simulations = []
-        for s_name in json.load(open(paths.simulation_sets + name + '.json')):
-            self.simulations.append(SumstatSimulation(s_name))
+        for sim_name in simulation_names:
+            self.simulations.append(SumstatSimulation(sim_name))
 
     def __iter__(self):
         return self.simulations.__iter__()
@@ -39,7 +40,7 @@ class Experiment(object):
             open(paths.experiments + name + '.json')))
         self.estimators = Estimators(self.estimators)
         self.truth = Estimators.create_estimator_from_json(self.truth)
-        self.simulations = Simulations(self.sim_set)
+        self.simulations = Simulations(self.simulations)
 
     def results_folder(self, create=True):
         path = paths.results + self.name + '/'
@@ -49,6 +50,10 @@ class Experiment(object):
 
     def plot_filename(self, sim):
         return self.results_folder() + sim.readable_name() + '.results.png'
+
+    def resultstsv_filename(self, sim, est):
+        return self.results_folder() + sim.readable_name() + '.' + \
+                est.readable_name() + '.results.tsv'
 
     def purpose_filename(self):
         return self.results_folder() + 'purpose.txt'

@@ -9,7 +9,9 @@ if __name__ == '__main__':
             help='the name of the json experiment file to do the preprocessing for')
     args = parser.parse_args()
 
+    print('loading experiment', args.exp_name)
     exp = Experiment(args.exp_name)
 
+    print('submitting preprocessing')
     for e in exp.estimators_and_truth():
         e.submit_preprocess()

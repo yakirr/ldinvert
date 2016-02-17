@@ -48,7 +48,7 @@ def submit(args):
             ['python', '-u', paths.code + 'sim/sim_betas.py'] + my_args,
             outfilepath,
             jobname='simbetas[1-' + str(sim.num_betas) + ']',
-            memory_GB=16)
+            memory_GB=5)
 
 
 if __name__ == '__main__':

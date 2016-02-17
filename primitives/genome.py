@@ -10,7 +10,7 @@ import paths
 
 
 class GenomicSubset(object):
-    def __init__(self, name, path=paths.genome_subsets, assembly='hg18'):
+    def __init__(self, name, path=paths.genome_subsets, assembly='hg19'):
         self.assembly = assembly
         self.name = name
         self.bedtool = BedTool(path + name + '.bed').sort()
@@ -44,15 +44,15 @@ class GenomicSubset(object):
                 lambda x : x[0] == 'chr' + str(int(chrnum))).saveas()
 
     @classmethod
-    def reference_genome(cls, assembly='hg18'):
+    def reference_genome(cls, assembly='hg19'):
         return GenomicSubset(assembly, path=paths.reference, assembly=assembly)
 
     @classmethod
-    def reference_chrom_bedtool(cls, chrnum, assembly='hg18'):
+    def reference_chrom_bedtool(cls, chrnum, assembly='hg19'):
         return cls.reference_genome(assembly=assembly).restricted_to_chrom_bedtool(chrnum)
 
     @classmethod
-    def whole_genome(cls, assembly='hg18'):
+    def whole_genome(cls, assembly='hg19'):
         return cls(assembly, path=paths.reference)
 
 class SnpSubset(object):
@@ -88,7 +88,7 @@ class SnpSubset(object):
     @classmethod
     def print_subsets(cls, outfilename, snpsubsets, names, add_other=False):
         def snp_info_df(d):
-            bfile = d.genotypes_bedfile().filename
+            bfile = d.genotypes_bedfile.filename
             return pd.read_csv(bfile + '.bim',
                     delim_whitespace=True,
                     usecols=[0,1,2,3],

@@ -11,22 +11,22 @@ from sparse.blockdiag import BlockDiag
 
 class MLE(Estimator):
     parser = argparse.ArgumentParser(add_help=False, parents=[Estimator.parser])
-    parser.add_argument('--ld_bandwidth', type=int, required=True,
-            help='the maximal ld bandwidth to allow, in mM')
+    parser.add_argument('--ld_window', type=int, required=True,
+            help='the maximal ld window to allow, in mM')
     parser.add_argument('--region', type=str, required=True,
             help='the name of the subset of the genome whose heritability should be \
                     analyzed. these files are in data/genome_subsets')
 
     def readable_name(self):
-        return 'MLE,A={},ref={},ldband={}'.format(
+        return 'MLE,A={},ref={},ldwindow={}'.format(
                 self.params.region,
                 self.params.refpanel,
-                self.params.ld_bandwidth)
+                self.params.ld_window)
 
     def preprocessing_foldername(self):
-        return 'pre.covariance.A={}.ldbandwidth={}'.format(
+        return 'pre.covariance.A={}.ldwindow={}'.format(
                 self.params.region,
-                self.params.ld_bandwidth)
+                self.params.ld_window)
 
     def R_file(self, mode='rb'):
         return open(self.path_to_preprocessed_data() + 'R.bd', mode)
@@ -39,12 +39,12 @@ class MLE(Estimator):
     def preprocess(self):
         matplotlib.use('Agg')
         gs = GenomicSubset(self.params.region)
-        ss = SnpSubset(self.refpanel, bedtool=gs.bedtool)
-        buffered_ss = ss.expanded_by(self.params.ld_bandwidth / 1000.)
-        R = BlockDiag.ld_matrix(self.refpanel, buffered_ss.irs, self.params.ld_bandwidth / 1000.)
+        A = SnpSubset(self.refpanel, bedtool=gs.bedtool)
+        W = A.expanded_by(self.params.ld_window / 1000.)
+        R = BlockDiag.ld_matrix(self.refpanel, W.irs, 300, band_units='SNPs')
         pickle.dump(R, self.R_file(mode='wb'), 2)
-        R.plot(ss.irs, filename=self.R_plotfilename())
-        RA = R.zero_outside_irs(ss.irs)
+        R.plot(A.irs, filename=self.R_plotfilename())
+        RA = R.zero_outside_irs(A.irs)
         pickle.dump(RA, self.RA_file(mode='wb'), 2)
 
     def run(self, beta_num, sim):
@@ -53,7 +53,7 @@ class MLE(Estimator):
 
         # compute the results
         results = []
-        for alphahat in sim.sumstats_files(beta_num):
+        for alphahat in sim.sumstats_aligned_to_refpanel(beta_num, self.refpanel):
             alphahat = BlockDiag.from_big1darray(alphahat, R.irs)
             results.append(self.compute_statistic(
                 alphahat, R, RA, sim.sample_size, self.refpanel.N, memoize=True))
@@ -80,10 +80,10 @@ class MLE_reg(MLE):
             help='the value of lambda by which to regularize LD estimates')
 
     def readable_name(self):
-        return 'MLEreg,A={},ref={},ldband={},L={}'.format(
+        return 'MLEreg,A={},ref={},ldwindow={},L={}'.format(
                 self.params.region,
                 self.params.refpanel,
-                self.params.ld_bandwidth,
+                self.params.ld_window,
                 self.params.Lambda)
 
     def compute_statistic(self, alphahat, R, RA, N, Nref, memoize=False):
@@ -99,65 +99,117 @@ class MLE_reg(MLE):
 
 
 # version of MLE_reg that doesn't band when estimating LD around a category.
-class MLE_reg_noband(MLE_reg):
+class MLE_rnb(MLE_reg):
     parser = argparse.ArgumentParser(add_help=False, parents=[MLE_reg.parser])
     parser.add_argument('--units', type=str, required=True,
             help='either mM or bp. Sets how the estimator chooses to draw the LD \
                     window around the category')
+    parser.add_argument('--Radjust', type=str, required=False, default='none',
+            help='whether to bias adjust the estimate of Rinv for finite reference panel \
+                    sample size. "before" means adjust before regularization \
+                    and inversion. "after" means adjust after regularization and \
+                    inversion. Anything else means don\'t adjust')
+    parser.add_argument('--RAreg', type=int, required=False, default=0,
+            help='whether to regularize RA in addition to Rinv. 0 means no, 1 means yes.')
+    parser.add_argument('--sigma2g', type=float, required=False, default=0,
+            help='the value to use for the bias-correction corresponding to a finite pop \
+                    size')
+    parser.add_argument('--pop_size', type=int, required=False, default=54734,
+            help='the size of the population that individuals are sampled from')
+    parser.add_argument('--avgunbiased', type=int, required=False, default=0,
+            help='1 to apply the average bias correction using the full GERA \
+                    genotypes, 0 otherwise.')
 
     def readable_name(self):
-        return 'MLE_reg_noband,A={},ref={},ldband={},L={},units={}'.format(
-                self.params.region,
-                self.params.refpanel,
-                self.params.ld_bandwidth,
-                self.params.Lambda,
-                self.params.units)
+        result = 'MLE_rnb,A={},ref={},ldwindow={},L={},units={},Radjust={}'.format(
+                    self.params.region,
+                    self.params.refpanel,
+                    self.params.ld_window,
+                    self.params.Lambda,
+                    self.params.units,
+                    self.params.Radjust) + \
+                'RAreg={},sigma2g={:0.2f},pop_size={}'.format(
+                    self.params.RAreg,
+                    self.params.sigma2g,
+                    self.params.pop_size)
+        if self.params.avgunbiased:
+            result += 'avgunbiased'
+        return result
+
+    def window(self, A):
+        if self.params.units == 'mM':
+            units = 'Morgans'
+            window = self.params.ld_window / 1000.
+        elif self.params.units == 'bp':
+            units = 'bp'
+            window = self.params.ld_window
+        else:
+            print('ERROR: units must be either mM or bp')
+        return A.expanded_by(window, units=units)
 
     def preprocessing_foldername(self):
-        return 'pre.unbanded_covariance.A={}.ldbandwidth={}.units={}'.format(
+        return 'pre.unbanded_covariance.A={}.ldwindow={}.units={}'.format(
                 self.params.region,
-                self.params.ld_bandwidth,
+                self.params.ld_window,
                 self.params.units)
 
     def preprocess(self):
         matplotlib.use('Agg')
-        if self.params.units == 'mM':
-            units = 'Morgans'
-            bandwidth = self.params.ld_bandwidth / 1000.
-        elif self.params.units == 'bp':
-            units = 'bp'
-            bandwidth = self.params.ld_bandwidth
-        else:
-            print('ERROR: units must be either mM or bp')
         gs = GenomicSubset(self.params.region)
-        ss = SnpSubset(self.refpanel, bedtool=gs.bedtool)
-        buffered_ss = ss.expanded_by(bandwidth, units=units)
-        R = BlockDiag.ld_matrix(self.refpanel, buffered_ss.irs, 1000000) # bandwidth=infty
-        R.plot(ss.irs, filename=self.R_plotfilename())
+        A = SnpSubset(self.refpanel, bedtool=gs.bedtool)
+        W = self.window(A)
+        R = BlockDiag.ld_matrix(self.refpanel, W.irs, 1000000) # bandwidth=infty
         pickle.dump(R, self.R_file(mode='wb'), 2)
-        RA = R.zero_outside_irs(ss.irs)
+        try: # if the plotting has some error we don't want to not save the stuff
+            R.plot(A.irs, filename=self.R_plotfilename())
+        except:
+            pass
+        RA = R.zero_outside_irs(A.irs)
         pickle.dump(RA, self.RA_file(mode='wb'), 2)
 
-
-class MLE_rnb_biasadjusted(MLE_reg_noband):
-    def readable_name(self):
-        return 'MLE_rnb,A={},ref={},ldband={},L={},units={}'.format(
-                self.params.region,
-                self.params.refpanel,
-                self.params.ld_bandwidth,
-                self.params.Lambda,
-                self.params.units)
-
     def compute_statistic(self, alphahat, R, RA, N, Nref, memoize=False):
-        #TODO: should we regularize RA?
-        print('regularizing R...')
-        Rreg = R.add_ridge(self.params.Lambda, renormalize=True)
+        Rajd = Nadjust_after = None
+        if self.params.Radjust == 'after':
+            Nadjust_after = Nref
+            Radj = R
+        elif self.params.Radjust == 'before':
+            Nadjust_after = None
+            Radj = R.adjusted_before_inversion(Nref)
+        else:
+            Nadjust_after = None
+            Radj = R
+
+        if self.params.RAreg:
+            print('regularizing RA')
+            RA = RA.add_ridge(self.params.Lambda, renormalize=True)
+            gs = GenomicSubset(self.params.region)
+            A = SnpSubset(self.refpanel, bedtool=gs.bedtool)
+            RA.zero_outside_irs(A.irs)
+
+        print('adding lambda')
+        Radjreg = Radj.add_ridge(self.params.Lambda, renormalize=True)
         if not memoize or not hasattr(self, 'bias'):
             print('done.computing bias...')
-            self.bias = BlockDiag.solve(Rreg, RA, N_to_adjust_for=Nref).trace() / N
-            print('bias =', self.bias)
-        betahat = BlockDiag.solve(Rreg, alphahat, N_to_adjust_for=Nref)
-        return betahat.dot(RA.dot(betahat)) - self.bias
+            A = SnpSubset(self.refpanel, bedtool=GenomicSubset(self.params.region).bedtool)
+            W = self.window(A)
+            if not self.params.avgunbiased:
+                tr = BlockDiag.solve(Radjreg, RA, Nadjust_after=Nadjust_after).trace()
+                self.scaling = 1
+            else:
+                Radjreginv = Radjreg.inv(Nadjust_after=Nadjust_after)
+                tr = RA.dot(Radjreginv).dot(R).dot(Radjreginv).trace()
+                Q = R.dot(Radjreginv).dot(RA).dot(Radjreginv).dot(R)
+                Q.zero_outside_irs(A.irs)
+                self.scaling = A.num_snps() / Q.trace()
+            self.bias = tr / N + \
+                    float(self.refpanel.M-len(W.irs))/(self.refpanel.M-len(A.irs)) * \
+                        self.params.sigma2g * tr / self.params.pop_size
+            print('\nbias =', self.bias)
+            print('scaling =', self.scaling)
+
+        betahat = BlockDiag.solve(Radjreg, alphahat, Nadjust_after=Nadjust_after)
+
+        return self.scaling * betahat.dot(RA.dot(betahat)) - self.bias
 
 
 if __name__ == '__main__':
@@ -168,8 +220,8 @@ if __name__ == '__main__':
     from primitives.genome import GenomicSubset, SnpSubset
     from primitives.simulation import SumstatSimulation
     from primitives.dataset import Dataset
-    est = MLE_reg_noband(refpanel='GERA_ref14k', region='50', ld_bandwidth=1, units='cM', Lambda=0.05)
-    # est = MLE_reg_noband(refpanel='tinyGERA_ref2k', region='tiny', ld_bandwidth=0.01,
+    est = MLE_reg_noband(refpanel='GERA_ref14k', region='50', ld_window=1, units='cM', Lambda=0.05)
+    # est = MLE_reg_noband(refpanel='tinyGERA_ref2k', region='tiny', ld_window=0.01,
             # Lambda=0.01)
     sim = SumstatSimulation('GERA.50bigger_sparse')
     # est.preprocess()

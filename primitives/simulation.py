@@ -1,6 +1,7 @@
 from __future__ import print_function, division
 import json
 import pickle
+import pandas as pd
 from pyutils import fs
 from dataset import Dataset
 import paths
@@ -11,6 +12,7 @@ class SumstatSimulation(object):
         self.name = name
         self.__dict__.update(
                 json.load(open(path + name + '.json')))
+        self.__dataset = Dataset(self.dataset)
 
     def __str__(self):
         result = ''
@@ -20,14 +22,15 @@ class SumstatSimulation(object):
         return result
 
     def readable_name(self):
-        return '{},{},h2g={},sample_size={}'.format(
+        return '{},{},h2g={},sample_size={},cond={}'.format(
                 self.dataset,
                 self.architecture,
                 self.h2g,
-                self.sample_size)
+                self.sample_size,
+                self.condition_on_covariates)
 
     def path_to_genotypes(self):
-        return paths.datasets + self.dataset + '/'
+        return self.__dataset.path
 
     def path(self, create=True):
         path = self.path_to_genotypes() + self.name + '/'
@@ -53,6 +56,13 @@ class SumstatSimulation(object):
     def sumstats_file(self, beta_num, index, mode='rb'):
         return open(self.path_to_beta(beta_num) +
                 str(index) + '.alphahat', mode)
+
+    def sumstats_aligned_to_refpanel(self, beta_num, refpanel):
+        to_flip = self.__dataset.snp_consistency_vector(refpanel)
+
+        for alphahat in self.sumstats_files(beta_num):
+            alphahat[to_flip] *= -1
+            yield alphahat
 
     def sumstats_files(self, beta_num):
         for i in range(1, self.num_samples_per_beta+1):

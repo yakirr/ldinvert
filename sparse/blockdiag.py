@@ -18,9 +18,14 @@ class BlockDiag(object):
         return cls({r : bigarray[r[0]:r[1]] for r in irs.ranges()}, irs)
 
     @classmethod
-    def ld_matrix(cls, d, snpset_irs, bandwidth_morg, indivs=None, output=None):
+    def ld_matrix(cls, d, snpset_irs, bandwidth, band_units='Morgans', indivs=None,
+            output=None, make_consistent_with=None):
         if snpset_irs is None:
             snpset_irs = IntRangeSet((0, d.M))
+        if make_consistent_with is None:
+            positions_to_flip = np.array([])
+        else:
+            positions_to_flip = d.snp_consistency_vector(make_consistent_with)
         ranges_to_arrays = {}
         def add_covariance_for_range(r):
             print(r)
@@ -29,7 +34,8 @@ class BlockDiag(object):
             range_genotypes = d.get_standardized_genotypes(r, indivs=indivs)
 
             def compute_cov_for_snp(m):
-                end = d.buffer_around_snp(m, bandwidth_morg, start=r[0], end=r[1])[1]
+                end = d.buffer_around_snp(m, bandwidth, start=r[0], end=r[1],
+                        units=band_units)[1]
 
                 window_start = m - r[0]
                 window_end = end - r[0]
@@ -44,6 +50,12 @@ class BlockDiag(object):
 
             # symmetrization
             ranges_to_arrays[r] = cov + cov.T
+
+            # make coding of snps consistent with other dataset
+            flip = np.array(IntRangeSet(positions_to_flip) & IntRangeSet((r[0],r[1])),
+                    dtype=int) - r[0] # dtype required so we can use empty array as index
+            ranges_to_arrays[r][flip] *= -1
+            ranges_to_arrays[r][:,flip] *= -1
 
         map(add_covariance_for_range,
                 snpset_irs.ranges())
@@ -78,19 +90,14 @@ class BlockDiag(object):
                 curr_dim += length
         return result
 
-    def inv(self):
-        ranges_to_invarrays = {
-                r:np.linalg.inv(self.ranges_to_arrays[r]) for r in self.ranges()
-                }
-        return BlockDiagArray(ranges_to_invarrays)
-
     def shape(self):
         return [self.ranges_to_arrays[r].shape for r in self.ranges()]
 
     def trace(self):
-        return np.sum([
-            np.trace(a) for a in self.ranges_to_arrays.values()
-            ])
+        traces = [np.trace(a) for a in self.ranges_to_arrays.values()]
+        for i, r in enumerate(self.ranges_to_arrays.keys()):
+            print(r, traces[i], end=', ')
+        return np.sum(traces)
 
     # merge several disjoint BDM's
     @staticmethod
@@ -131,13 +138,21 @@ class BlockDiag(object):
             return BlockDiag(
                     result_ranges_to_arrays)
         else:
+            for r, A in result_ranges_to_arrays.items():
+                print(r, A, end=', ')
             return sum(result_ranges_to_arrays.values())
 
     # returns a copy in which lambda*I has beed added to everything
     def add_ridge(self, Lambda, renormalize=False):
         normalization = 1 + Lambda if renormalize else 1
         return BlockDiag({
-                r:(self.ranges_to_arrays[r] + Lambda * np.eye(len(A))) / normalization
+                r:(A + Lambda * np.eye(len(A))) / normalization
+                for r, A in self.ranges_to_arrays.items()
+            })
+
+    def adjusted_before_inversion(self, Nadjust):
+        return BlockDiag({
+                r: A * Nadjust / (Nadjust - A.shape[0] - 1.)
                 for r, A in self.ranges_to_arrays.items()
             })
 
@@ -145,11 +160,12 @@ class BlockDiag(object):
     def plot(self, irs_to_mark, filename=None):
         import matplotlib.pyplot as plt
         rows = int(math.ceil(math.sqrt(len(self.ranges()))))
-        cols = int(math.ceil(len(self.ranges()) / rows))
+        cols = max(int(math.ceil(len(self.ranges()) / rows)), 2) # the max is so we get
+                                                                # back a 2-D array always
         fig, axes = plt.subplots(nrows=rows, ncols=cols)
         for i,(r, A) in enumerate(self.ranges_to_arrays.items()):
-            # import pdb; pdb.set_trace()
             width = r[1] - r[0]
+            import pdb; pdb.set_trace()
             ax = axes[int(i/rows), i % rows]
             ax.matshow(A, vmin=-1, vmax=1)
             # import pdb; pdb.set_trace()
@@ -177,20 +193,32 @@ class BlockDiag(object):
         else:
             fig.show()
 
+    # if Nadjust_after is not None, then this bias-adjusts the inverse as if
+    # the matrix being inverted is a covariance matrix estimated from a sample of size Nad..
+    def inv(self, Nadjust_after=None):
+        ranges_to_invarrays = {
+                r:np.linalg.inv(self.ranges_to_arrays[r]) for r in self.ranges()
+                }
+        if Nadjust_after:
+            for r in ranges_to_invarrays.keys():
+                bias_adjustment = \
+                    (Nadjust_after-ranges_to_invarrays[r].shape[0]-1)/Nadjust_after
+                ranges_to_invarrays[r] *= bias_adjustment
+        return BlockDiag(ranges_to_invarrays)
 
     # assumes the both arrays have the exact same set of ranges
-    # if N_to_adjust_for is not None, then this bias-adjusts the inverse as if
-    # the matrix being inverted is a covariance matrix estimated from a sample of size N
+    # if Nadjust_after is not None, then this bias-adjusts the inverse as if
+    # the matrix being inverted is a covariance matrix estimated from a sample of size Nad..
     @staticmethod
-    def solve(A, b, N_to_adjust_for=None):
+    def solve(A, b, Nadjust_after=None):
         result_ranges_to_arrays = {
                 r:np.linalg.solve(A.ranges_to_arrays[r], b.ranges_to_arrays[r])
                 for r in A.ranges()
                 }
-        if N_to_adjust_for:
+        if Nadjust_after:
             for r in result_ranges_to_arrays.keys():
                 bias_adjustment = \
-                    (N_to_adjust_for-result_ranges_to_arrays[r].shape[0]-1)/N_to_adjust_for
+                    (Nadjust_after-result_ranges_to_arrays[r].shape[0]-1)/Nadjust_after
                 result_ranges_to_arrays[r] *= bias_adjustment
         return BlockDiag(result_ranges_to_arrays)
 

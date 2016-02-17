@@ -11,19 +11,19 @@ from sparse.blockdiag import BlockDiag
 
 class Truth(Estimator):
     parser = argparse.ArgumentParser(add_help=False, parents=[Estimator.parser])
-    parser.add_argument('--ld_bandwidth', type=float, required=True,
-            help='the maximal ld bandwidth to allow, in Morgans')
+    parser.add_argument('--ld_bandwidth', type=int, required=True,
+            help='the maximal ld bandwidth to allow, in milli-Morgans')
     parser.add_argument('--region', type=str, required=True,
             help='the name of the subset of the genome whose heritability should be \
                     analyzed. these files are in data/genome_subsets')
 
     def readable_name(self):
-        return 'Truth,A={},ld_band={}'.format(
+        return 'Truth,A={},ldband={}'.format(
                 self.params.region,
                 self.params.ld_bandwidth)
 
     def preprocessing_foldername(self):
-        return 'pre.truthcovariance.A={}.ldbandwidth={}'.format(
+        return 'pre.truthcovariance.A={}.ldband={}'.format(
                 self.params.region,
                 self.params.ld_bandwidth)
 
@@ -36,7 +36,7 @@ class Truth(Estimator):
         matplotlib.use('Agg')
         gs = GenomicSubset(self.params.region)
         ss = SnpSubset(self.refpanel, bedtool=gs.bedtool)
-        RA = BlockDiag.ld_matrix(self.refpanel, ss.irs, self.params.ld_bandwidth)
+        RA = BlockDiag.ld_matrix(self.refpanel, ss.irs, self.params.ld_bandwidth / 1000.)
         RA.plot(ss.irs, filename=self.RA_plotfilename())
         pickle.dump(RA, self.RA_file(mode='wb'), 2)
 
@@ -57,7 +57,7 @@ if __name__ == '__main__':
     from primitives.genome import GenomicSubset, SnpSubset
     from primitives.simulation import SumstatSimulation
     from primitives.dataset import Dataset
-    est = Truth(refpanel='tinyGERA', region='tiny', ld_bandwidth=0.1)
+    est = Truth(refpanel='tinyGERA', region='tiny', ld_bandwidth=100)
     sim = SumstatSimulation('tinyGERA.tiny_inf')
     # est.preprocess()
     est.run(1, sim)

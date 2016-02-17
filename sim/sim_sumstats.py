@@ -25,15 +25,23 @@ def main(args):
     print('adding noise. sigma2e =', sigma2e)
     Y += np.sqrt(sigma2e) * np.random.randn(*Y.shape)
 
+    if sim.condition_on_covariates:
+        print('projecting covariates out of Y')
+        Y = d.project_out_covariates(Y, covariates=d.covariates[indices])
+
     alphahat = np.zeros(d.M)
     t0 = time()
     def compute_sumstats_for_slice(s):
         # X will be N x M
         print(int(time() - t0), ': getting genotypes from file. SNPs', s)
-        X = d.get_standardized_genotypes(s)
+        X = d.get_standardized_genotypes(s)[indices]
 
-        print('computing sumstats. SNPs', s)
-        alphahat[s[0]:s[1]] = X[indices].T.dot(Y) / sim.sample_size
+        if sim.condition_on_covariates:
+            print(int(time() - t0), ': projecting out covariates')
+            X = d.project_out_covariates(X, covariates=d.covariates[indices])
+
+        print(int(time() - t0), ': computing sumstats. SNPs', s)
+        alphahat[s[0]:s[1]] = X.T.dot(Y) / sim.sample_size
         del X
     map(compute_sumstats_for_slice, d.slices())
 
@@ -62,7 +70,8 @@ def submit(args):
                 ['python', '-u', paths.code + 'sim/sim_sumstats.py'] + my_args,
                 outfilepath,
                 jobname='simsumstats' + str(beta_num) + '[1-' + str(sim.num_samples_per_beta) + ']',
-                memory_GB=16)
+                # memory_GB=8.5)
+                memory_GB=13)
     map(submit_beta, range(1,sim.num_betas + 1))
 
 

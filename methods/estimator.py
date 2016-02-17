@@ -1,6 +1,7 @@
 from __future__ import print_function, division
 import abc
 import numpy as np
+import math
 import argparse
 import pickle
 import os
@@ -23,28 +24,32 @@ class Estimator(object):
         if 'command_line_params' in kwargs:
             self.parse_command_line_params(kwargs['command_line_params'])
         else:
-            self.params = argparse.Namespace(**kwargs)
-
-        self.refpanel = Dataset(self.params.refpanel)
+            self.parse_command_line_params(Estimator.to_command_line(kwargs))
+        self.__refpanel = None
 
     def method(self):
         return self.__class__.__name__
 
     def parse_command_line_params(self, command_line_params):
-        self.params = argparse.Namespace(**self.__class__.parser.parse_known_args(
-                command_line_params)[0].__dict__)
+        self.params = self.__class__.parser.parse_known_args(command_line_params)[0]
 
-    def command_line_params(self):
+    @classmethod
+    def to_command_line(cls, dictionary):
         return list(itertools.chain(*[
-            ['--' + n, str(v)] for n, v in self.params.__dict__.items()
+            ['--' + n, str(v)] for n, v in dictionary.items()
             ]))
 
-    def params_str(self):
-        l = [n + '=' + str(v) for n, v in self.params.__dict__.items()]
-        return ','.join(sorted(l))
+    def command_line_params(self):
+        return Estimator.to_command_line(self.params.__dict__)
 
     def __str__(self):
         return self.method() + ',' + str(self.params.__dict__)
+
+    @property
+    def refpanel(self):
+        if self.__refpanel is None:
+            self.__refpanel = Dataset(self.params.refpanel)
+        return self.__refpanel
 
     @abc.abstractmethod
     def readable_name(self): pass
@@ -60,8 +65,7 @@ class Estimator(object):
         return path
 
     def preprocess_job_name(self):
-        return 'preprocess-{}-{}'.format(
-                self.method(), self.params_str())
+        return 'preprocess-' + self.readable_name()
 
     def preprocess_submitted(self):
         return os.path.isfile(self.path_to_preprocessed_data() + '.submitted')
@@ -81,7 +85,7 @@ class Estimator(object):
                     ['python', '-u', paths.code + 'methods/estimator_manager.py'] + my_args,
                     outfilepath,
                     jobname=self.preprocess_job_name(),
-                    memory_GB=16)
+                    memory_GB=2)
             self.declare_preprocess_submitted()
         else:
             print(str(self), ': pre-processing unnecessary')
@@ -91,42 +95,63 @@ class Estimator(object):
 
     # Running code
     def results_name(self):
-        return 'results.' + self.method() + '.' + self.params_str()
+        return 'results.' + self.readable_name()
 
     def results_path_stem(self, sim, beta_num):
         return sim.path_to_beta(beta_num, create=False) + self.results_name()
 
-    def run_job_name(self, sim):
-        return 'run-{}-{}-{}[1-{}]'.format(
-                self.method(), self.params_str(), sim.name, sim.num_betas)
+    def outfile_path(self, sim, batch_num):
+        path = sim.path() + 'logs/'
+        fs.makedir(path)
+        return path + '{}.batch.{}.out'.format(self.readable_name(), batch_num)
 
-    def submit_runs(self, sim, overwrite=False):
+    def num_batches(self, sim):
+        return min(20, sim.num_betas)
+    def batch_size(self, sim):
+        return int(math.ceil(sim.num_betas / self.num_batches(sim)))
+
+    # batch_num and beta_nums are 1-indexed to comply with LSF job indices
+    def betas_in_batch(self, sim, batch_num):
+        start = (batch_num - 1)*self.batch_size(sim) + 1
+        end = min(sim.num_betas+1, start + self.batch_size(sim))
+        return range(start, end)
+
+    def run_job_name(self, sim):
+        return 'run-{}-{}[1-{}]'.format(
+            self.readable_name(), sim.name, self.num_batches(sim))
+
+    def submit_runs(self, sim, overwrite=False, debug=False):
+        #TODO: have it check whether there are more betas or more samples per beta,
+        # and then have it decide whether to submit the betas in parallel or in groups
+        # probably its easy to have the actual estimator manager be able to accept groups of
+        # betas
         print('\n' + str(self), 'submitting', sim.name)
         my_args = ['--method_name', self.method(),
                 'run',
                 '--sim_name', sim.name,
-                '--beta_num', '$LSB_JOBINDEX'] + \
+                '--batch_num', '$LSB_JOBINDEX'] + \
                 self.command_line_params()
-        outfilepath = self.results_path_stem(sim, '%I') + '.out'
-        if all([os.path.exists(self.results_path_stem(sim, beta_num))
-            for beta_num in range(1, sim.num_betas+1)]) and not overwrite:
+        outfilepath = self.outfile_path(sim, '%I')
+        if all(os.path.exists(self.results_path_stem(sim, beta_num))
+            for beta_num in range(1, sim.num_betas+1)) and not overwrite:
             print('submission unnecessary for', str(self))
         else:
             bsub.submit(
                     ['python', '-u', paths.code + 'methods/estimator_manager.py'] + my_args,
                     outfilepath,
                     jobname=self.run_job_name(sim),
-                    queue='mini',
-                    time_in_minutes=10,
-                    memory_GB=2)
+                    memory_GB=2,
+                    debug=debug)
 
     @abc.abstractmethod
     def run(self, beta_num, sim): pass
 
-    def run_and_save_results(self, beta_num, sim):
-        results = self.run(beta_num, sim)
-        print(results)
-        np.savetxt(self.results_path_stem(sim, beta_num), results)
+    def run_and_save_results(self, batch_num, sim):
+        for beta_num in self.betas_in_batch(sim, batch_num):
+            print('===beta_num', beta_num, '====')
+            results = self.run(beta_num, sim)
+            print(results)
+            np.savetxt(self.results_path_stem(sim, beta_num), results)
 
     def results(self, beta_num, sim):
         return np.loadtxt(self.results_path_stem(sim, beta_num))

@@ -41,7 +41,7 @@ class MLE(Estimator):
         gs = GenomicSubset(self.params.region)
         A = SnpSubset(self.refpanel, bedtool=gs.bedtool)
         W = A.expanded_by(self.params.ld_window / 1000.)
-        R = BlockDiag.ld_matrix(self.refpanel, W.irs, 300, band_units='SNPs')
+        R = BlockDiag.ld_matrix(self.refpanel, W.irs.ranges(), 300, band_units='SNPs')
         pickle.dump(R, self.R_file(mode='wb'), 2)
         R.plot(A.irs, filename=self.R_plotfilename())
         RA = R.zero_outside_irs(A.irs)
@@ -54,7 +54,7 @@ class MLE(Estimator):
         # compute the results
         results = []
         for alphahat in sim.sumstats_aligned_to_refpanel(beta_num, self.refpanel):
-            alphahat = BlockDiag.from_big1darray(alphahat, R.irs)
+            alphahat = BlockDiag.from_big1darray(alphahat, R.ranges())
             results.append(self.compute_statistic(
                 alphahat, R, RA, sim.sample_size, self.refpanel.N, memoize=True))
             print(len(results), results[-1])
@@ -158,7 +158,7 @@ class MLE_rnb(MLE_reg):
         gs = GenomicSubset(self.params.region)
         A = SnpSubset(self.refpanel, bedtool=gs.bedtool)
         W = self.window(A)
-        R = BlockDiag.ld_matrix(self.refpanel, W.irs, 1000000) # bandwidth=infty
+        R = BlockDiag.ld_matrix(self.refpanel, W.irs.ranges(), 1000000) # bandwidth=infty
         pickle.dump(R, self.R_file(mode='wb'), 2)
         try: # if the plotting has some error we don't want to not save the stuff
             R.plot(A.irs, filename=self.R_plotfilename())
@@ -202,14 +202,14 @@ class MLE_rnb(MLE_reg):
                 Q.zero_outside_irs(A.irs)
                 self.scaling = A.num_snps() / Q.trace()
             self.bias = tr / N + \
-                    float(self.refpanel.M-len(W.irs))/(self.refpanel.M-len(A.irs)) * \
+                    float(self.refpanel.M-len(W.irs))/self.refpanel.M * \
                         self.params.sigma2g * tr / self.params.pop_size
             print('\nbias =', self.bias)
             print('scaling =', self.scaling)
 
         betahat = BlockDiag.solve(Radjreg, alphahat, Nadjust_after=Nadjust_after)
 
-        return self.scaling * betahat.dot(RA.dot(betahat)) - self.bias
+        return self.scaling * (betahat.dot(RA.dot(betahat)) - self.bias)
 
 
 if __name__ == '__main__':

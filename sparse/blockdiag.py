@@ -7,18 +7,24 @@ from pysnptools.util import IntRangeSet
 from pyutils import iter as it
 
 class BlockDiag(object):
-    def __init__(self, ranges_to_arrays, irs=None):
+    def __init__(self, ranges_to_arrays):
         self.ranges_to_arrays = ranges_to_arrays
-        if irs is None:
-            irs = IntRangeSet(ranges_to_arrays.keys())
-        self.irs = irs
 
     @classmethod
-    def from_big1darray(cls, bigarray, irs):
-        return cls({r : bigarray[r[0]:r[1]] for r in irs.ranges()}, irs)
+    def from_big1darray(cls, bigarray, ranges):
+        return cls({r : bigarray[r[0]:r[1]] for r in ranges})
+
+    @clsssmethod
+    def ld_matrix_blocks(cls, d, block_ranges, indivs=None, make_consistent_with=None):
+        if make_consistent_with is None:
+            positions_to_flip = np.array([])
+        else:
+            positions_to_flip = d.snp_consistency_vector(make_consistent_with)
+        ranges_to_arrays = {}
+
 
     @classmethod
-    def ld_matrix(cls, d, snpset_irs, bandwidth, band_units='Morgans', indivs=None,
+    def ld_matrix(cls, d, snpset_ranges, bandwidth, band_units='Morgans', indivs=None,
             output=None, make_consistent_with=None):
         if snpset_irs is None:
             snpset_irs = IntRangeSet((0, d.M))
@@ -59,7 +65,7 @@ class BlockDiag(object):
 
         map(add_covariance_for_range,
                 snpset_irs.ranges())
-        return cls(ranges_to_arrays, snpset_irs)
+        return cls(ranges_to_arrays)
 
     def __str__(self):
         result = ''
@@ -71,7 +77,7 @@ class BlockDiag(object):
         return copy.deepcopy(self)
 
     def ranges(self):
-        return sorted([r for r in self.irs.ranges()])
+        return sorted([r for r in self.ranges_to_arrays.keys()])
 
     def to_dense(self, ignore_ranges=True):
         if not ignore_ranges:
@@ -163,10 +169,8 @@ class BlockDiag(object):
         cols = max(int(math.ceil(len(self.ranges()) / rows)), 2) # the max is so we get
                                                                 # back a 2-D array always
         fig, axes = plt.subplots(nrows=rows, ncols=cols)
-        for i,(r, A) in enumerate(self.ranges_to_arrays.items()):
+        for ax,(r, A) in zip(fig.axes, self.ranges_to_arrays.items()):
             width = r[1] - r[0]
-            import pdb; pdb.set_trace()
-            ax = axes[int(i/rows), i % rows]
             ax.matshow(A, vmin=-1, vmax=1)
             # import pdb; pdb.set_trace()
             my_intrangeset = IntRangeSet(r)
@@ -223,8 +227,8 @@ class BlockDiag(object):
         return BlockDiag(result_ranges_to_arrays)
 
     @staticmethod
-    def eye(irs):
-        return BlockDiag({r:np.eye(r[1] - r[0]) for r in irs.ranges()})
+    def eye(ranges):
+        return BlockDiag({r:np.eye(r[1] - r[0]) for r in ranges})
 
 
 if __name__ == '__main__':
@@ -245,7 +249,7 @@ if __name__ == '__main__':
     tiny_buffered_ss = tiny_ss.expanded_by(0.01)
 
     t0 = time()
-    R = BlockDiag.ld_matrix(d, tiny_buffered_ss.irs, 0.01, indivs=indivs) # 1 cM bandwidth
+    R = BlockDiag.ld_matrix(d, tiny_buffered_ss.irs.ranges(), 0.01, indivs=indivs) # 1 cM bandwidth
     R = R.add_ridge(0.05, renormalize=True)
     print('trace of renormalized R should be close to M (with noise due to sample vs pop LD',
             R.trace(), tiny_buffered_ss.num_snps(),
@@ -255,7 +259,7 @@ if __name__ == '__main__':
 
     RA = R.copy()
     RA.zero_outside_irs(tiny_ss.irs)
-    b = BlockDiag.from_big1darray(np.random.randn(d.M), R.irs)
+    b = BlockDiag.from_big1darray(np.random.randn(d.M), R.ranges())
 
     # check inverse computation
     t0 = time()

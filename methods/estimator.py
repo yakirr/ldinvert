@@ -19,6 +19,8 @@ class Estimator(object):
     parser = argparse.ArgumentParser()
     parser.add_argument('--refpanel', type=str, required=True,
             help='the name of the data set to use as reference panel')
+    parser.add_argument('--pretty_name', type=str, required=False, default='no_name',
+            help='the name of the data set to use as reference panel')
 
     def __init__(self, **kwargs):
         if 'command_line_params' in kwargs:
@@ -106,7 +108,7 @@ class Estimator(object):
         return path + '{}.batch.{}.out'.format(self.readable_name(), batch_num)
 
     def num_batches(self, sim):
-        return min(20, sim.num_betas)
+        return min(10, sim.num_betas)
     def batch_size(self, sim):
         return int(math.ceil(sim.num_betas / self.num_batches(sim)))
 
@@ -149,9 +151,13 @@ class Estimator(object):
     def run_and_save_results(self, batch_num, sim):
         for beta_num in self.betas_in_batch(sim, batch_num):
             print('===beta_num', beta_num, '====')
-            results = self.run(beta_num, sim)
+            results = np.array(self.run(beta_num, sim))
             print(results)
-            np.savetxt(self.results_path_stem(sim, beta_num), results)
+            if len(results.shape) > 1: # this means we got variance estimates as well
+                np.savetxt(self.results_path_stem(sim, beta_num), results[:,0])
+                np.savetxt(self.results_path_stem(sim, beta_num)+'_var', results[:,1])
+            else:
+                np.savetxt(self.results_path_stem(sim, beta_num), results)
 
     def results(self, beta_num, sim):
         return np.loadtxt(self.results_path_stem(sim, beta_num))

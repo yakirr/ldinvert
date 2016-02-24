@@ -70,7 +70,7 @@ def submit(args):
                 ['python', '-u', paths.code + 'sim/sim_sumstats.py'] + my_args,
                 outfilepath,
                 jobname='simsumstats' + str(beta_num) + '[1-' + str(sim.num_samples_per_beta) + ']',
-                # memory_GB=8.5)
+                # memory_GB=10.5)
                 memory_GB=13)
     map(submit_beta, range(1,sim.num_betas + 1))
 

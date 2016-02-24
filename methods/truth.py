@@ -36,14 +36,17 @@ class Truth(Estimator):
         matplotlib.use('Agg')
         gs = GenomicSubset(self.params.region)
         ss = SnpSubset(self.refpanel, bedtool=gs.bedtool)
-        RA = BlockDiag.ld_matrix(self.refpanel, ss.irs, self.params.ld_bandwidth / 1000.)
-        RA.plot(ss.irs, filename=self.RA_plotfilename())
+        RA = BlockDiag.ld_matrix(self.refpanel, ss.irs.ranges(), self.params.ld_bandwidth / 1000.)
+        try: # if the plotting has some error we don't want to not save the stuff
+            RA.plot(ss.irs, filename=self.RA_plotfilename())
+        except:
+            pass
         pickle.dump(RA, self.RA_file(mode='wb'), 2)
 
     def run(self, beta_num, sim):
         RA = pickle.load(self.RA_file())
         beta = pickle.load(sim.beta_file(beta_num))
-        beta = BlockDiag.from_big1darray(beta, RA.irs)
+        beta = BlockDiag.from_big1darray(beta, RA.ranges())
         results = [beta.dot(RA.dot(beta))]
         print(results[-1])
         return results

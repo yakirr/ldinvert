@@ -194,6 +194,7 @@ class LDSC(Estimator):
         overlaps = self.overlap_vector()
         print('num snps overlapping with each category:', overlaps)
         results = []
+        variances = []
         for alphahat in sim.sumstats_files(beta_num):
             alphahat = d.N * alphahat ** 2
             if self.params.constrain_intercept:
@@ -212,10 +213,11 @@ class LDSC(Estimator):
                         N,
                         M_annot)
             results.append(hsqhat.coef.dot(overlaps))
+            variances.append(overlaps.dot(hsqhat.coef_cov).dot(overlaps))
             print('intercept:', hsqhat.intercept)
-            print(len(results), results[-1])
+            print(len(results), results[-1], variances[-1])
 
-        return results
+        return np.concatenate([np.array([results]).T, np.array([variances]).T], axis=1)
 
 
 if __name__ == '__main__':

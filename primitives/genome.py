@@ -122,6 +122,27 @@ class SnpSubset(object):
         with gzip.open(outfilename, 'wt') as write_file:
             df.to_csv(write_file, index=False, sep='\t')
 
+class SnpPartition(object):
+    def __init__(self, dataset, breakpoints_bedtool, remove_mhc=True):
+        # use bedtools to create an indicator vector for the snps membership in the subset
+        self.dataset = dataset
+        c = dataset.snp_coords().sort().closest(
+                breakpoints_bedtool.sort(), iu=True, D='ref').saveas()
+        closest_breakpoints = np.array([' '.join(i[3:-1]) for i in c] + [''])
+        indices = closest_breakpoints[:-1] != closest_breakpoints[1:]
+        self.last_snps = np.flatnonzero(indices)
+        self.remove_mhc = remove_mhc
+        self.mhc = None
+
+    def ranges(self):
+        ranges = zip(np.concatenate([[0], self.last_snps]), self.last_snps)
+        if not self.remove_mhc:
+            return ranges
+        else:
+            if self.mhc is None:
+                self.mhc = SnpSubset(self.dataset, self.dataset.mhc_bedtool())
+            return [r for r in ranges if (IntRangeSet(r) & self.mhc.irs).isempty]
+
 
 if __name__ == '__main__':
     from dataset import Dataset

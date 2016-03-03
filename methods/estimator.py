@@ -76,6 +76,9 @@ class Estimator(object):
         f = open(self.path_to_preprocessed_data() + '.submitted', 'w')
         f.close()
 
+    def preprocess_memoryreq_GB(self):
+        return 2
+
     def submit_preprocess(self):
         if not self.preprocess_submitted():
             print(str(self), 'pre-processing')
@@ -87,7 +90,7 @@ class Estimator(object):
                     ['python', '-u', paths.code + 'methods/estimator_manager.py'] + my_args,
                     outfilepath,
                     jobname=self.preprocess_job_name(),
-                    memory_GB=2)
+                    memory_GB=self.preprocess_memoryreq_GB())
             self.declare_preprocess_submitted()
         else:
             print(str(self), ': pre-processing unnecessary')
@@ -98,9 +101,13 @@ class Estimator(object):
     # Running code
     def results_name(self):
         return 'results.' + self.readable_name()
+    def variances_name(self):
+        return self.results_name() + '_var'
 
     def results_path_stem(self, sim, beta_num):
         return sim.path_to_beta(beta_num, create=False) + self.results_name()
+    def variances_path_stem(self, sim, beta_num):
+        return sim.path_to_beta(beta_num, create=False) + self.variances_name()
 
     def outfile_path(self, sim, batch_num):
         path = sim.path() + 'logs/'
@@ -142,7 +149,7 @@ class Estimator(object):
                     ['python', '-u', paths.code + 'methods/estimator_manager.py'] + my_args,
                     outfilepath,
                     jobname=self.run_job_name(sim),
-                    memory_GB=2,
+                    memory_GB=4,
                     debug=debug)
 
     @abc.abstractmethod
@@ -155,9 +162,11 @@ class Estimator(object):
             print(results)
             if len(results.shape) > 1: # this means we got variance estimates as well
                 np.savetxt(self.results_path_stem(sim, beta_num), results[:,0])
-                np.savetxt(self.results_path_stem(sim, beta_num)+'_var', results[:,1])
+                np.savetxt(self.variances_path_stem(sim, beta_num), results[:,1])
             else:
                 np.savetxt(self.results_path_stem(sim, beta_num), results)
 
     def results(self, beta_num, sim):
         return np.loadtxt(self.results_path_stem(sim, beta_num))
+    def variances(self, beta_num, sim):
+        return np.loadtxt(self.variances_path_stem(sim, beta_num))

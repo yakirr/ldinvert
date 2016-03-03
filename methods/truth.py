@@ -38,7 +38,8 @@ class Truth(Estimator):
         ss = SnpSubset(self.refpanel, bedtool=gs.bedtool)
         RA = BlockDiag.ld_matrix(self.refpanel, ss.irs.ranges(), self.params.ld_bandwidth / 1000.)
         try: # if the plotting has some error we don't want to not save the stuff
-            RA.plot(ss.irs, filename=self.RA_plotfilename())
+            # RA.plot(ss.irs, filename=self.RA_plotfilename())
+            pass
         except:
             pass
         pickle.dump(RA, self.RA_file(mode='wb'), 2)

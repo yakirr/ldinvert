@@ -98,6 +98,10 @@ class Dataset(object):
             print('warning: ucscbedfile not found:', ucscbedfilename)
             return None
 
+    def mhc_bedtool(self):
+        mhc_filename = paths.reference + self.reference_genome + '.MHC.bed'
+        return BedTool(mhc_filename)
+
     def all_snps(self):
         return IntRangeSet((0, self.M))
 

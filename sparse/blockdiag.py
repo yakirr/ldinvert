@@ -14,7 +14,7 @@ class BlockDiag(object):
     def from_big1darray(cls, bigarray, ranges):
         return cls({r : bigarray[r[0]:r[1]] for r in ranges})
 
-    @clsssmethod
+    @classmethod
     def ld_matrix_blocks(cls, d, block_ranges, indivs=None, make_consistent_with=None):
         if make_consistent_with is None:
             positions_to_flip = np.array([])
@@ -22,12 +22,25 @@ class BlockDiag(object):
             positions_to_flip = d.snp_consistency_vector(make_consistent_with)
         ranges_to_arrays = {}
 
+        def add_covariance_for_range(r):
+            print(r)
+            range_genotypes = d.get_standardized_genotypes(r, indivs=indivs)
+            ranges_to_arrays[r] = \
+                range_genotypes.T.dot(range_genotypes) / range_genotypes.shape[0]
+
+            # make coding of snps consistent with other dataset
+            flip = np.array(IntRangeSet(positions_to_flip) & IntRangeSet((r[0],r[1])),
+                    dtype=int) - r[0] # dtype required so we can use empty array as index
+            ranges_to_arrays[r][flip] *= -1
+            ranges_to_arrays[r][:,flip] *= -1
+        map(add_covariance_for_range, block_ranges)
+        return cls(ranges_to_arrays)
 
     @classmethod
     def ld_matrix(cls, d, snpset_ranges, bandwidth, band_units='Morgans', indivs=None,
             output=None, make_consistent_with=None):
-        if snpset_irs is None:
-            snpset_irs = IntRangeSet((0, d.M))
+        if snpset_ranges is None:
+            snpset_ranges = (0, d.M)
         if make_consistent_with is None:
             positions_to_flip = np.array([])
         else:
@@ -64,7 +77,7 @@ class BlockDiag(object):
             ranges_to_arrays[r][:,flip] *= -1
 
         map(add_covariance_for_range,
-                snpset_irs.ranges())
+                snpset_ranges)
         return cls(ranges_to_arrays)
 
     def __str__(self):
@@ -103,6 +116,7 @@ class BlockDiag(object):
         traces = [np.trace(a) for a in self.ranges_to_arrays.values()]
         for i, r in enumerate(self.ranges_to_arrays.keys()):
             print(r, traces[i], end=', ')
+        print('\n')
         return np.sum(traces)
 
     # merge several disjoint BDM's
@@ -118,13 +132,16 @@ class BlockDiag(object):
     def __zero_block_outside_irs(self, r, other_intrangeset):
         my_intrangeset = IntRangeSet(r)
         intersection_intrangeset = my_intrangeset & other_intrangeset
-        mask = np.zeros(len(my_intrangeset), dtype=bool)
-        for s in intersection_intrangeset.ranges():
-            start = my_intrangeset.index(s[0])
-            end = start + s[1] - s[0]
-            mask[start:end] = True
-        self.ranges_to_arrays[r][~mask] = 0
-        self.ranges_to_arrays[r].T[~mask] = 0 # done this way for compatibility with 1d arrays
+        if intersection_intrangeset.isempty:
+            del self.ranges_to_arrays[r]
+        else:
+            mask = np.zeros(len(my_intrangeset), dtype=bool)
+            for s in intersection_intrangeset.ranges():
+                start = my_intrangeset.index(s[0])
+                end = start + s[1] - s[0]
+                mask[start:end] = True
+            self.ranges_to_arrays[r][~mask] = 0
+            self.ranges_to_arrays[r].T[~mask] = 0 # for compatibility with 1d arrays
 
     # zero out this BDM outside a set of ranges
     def zero_outside_irs(self, other_intrangeset):
@@ -134,11 +151,11 @@ class BlockDiag(object):
                     other_intrangeset)
         return self
 
-    # assumes the other matrix has the exact same set of ranges
+    # assumes the other matrix has a set of ranges with the same start/end points
     def dot(self, other):
         result_ranges_to_arrays = {
                 r:self.ranges_to_arrays[r].dot(other.ranges_to_arrays[r])
-                for r in self.ranges()
+                for r in set(self.ranges()) & set(other.ranges())
                 }
         if result_ranges_to_arrays.values()[0].shape:
             return BlockDiag(
@@ -210,14 +227,14 @@ class BlockDiag(object):
                 ranges_to_invarrays[r] *= bias_adjustment
         return BlockDiag(ranges_to_invarrays)
 
-    # assumes the both arrays have the exact same set of ranges
+    # assumes the both arrays have compatible sets of ranges, as with dot
     # if Nadjust_after is not None, then this bias-adjusts the inverse as if
     # the matrix being inverted is a covariance matrix estimated from a sample of size Nad..
     @staticmethod
     def solve(A, b, Nadjust_after=None):
         result_ranges_to_arrays = {
                 r:np.linalg.solve(A.ranges_to_arrays[r], b.ranges_to_arrays[r])
-                for r in A.ranges()
+                for r in set(A.ranges()) & set(b.ranges())
                 }
         if Nadjust_after:
             for r in result_ranges_to_arrays.keys():

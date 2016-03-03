@@ -43,7 +43,7 @@ class MLE(Estimator):
         W = A.expanded_by(self.params.ld_window / 1000.)
         R = BlockDiag.ld_matrix(self.refpanel, W.irs.ranges(), 300, band_units='SNPs')
         pickle.dump(R, self.R_file(mode='wb'), 2)
-        R.plot(A.irs, filename=self.R_plotfilename())
+        # R.plot(A.irs, filename=self.R_plotfilename())
         RA = R.zero_outside_irs(A.irs)
         pickle.dump(RA, self.RA_file(mode='wb'), 2)
 
@@ -119,6 +119,8 @@ class MLE_rnb(MLE_reg):
     parser.add_argument('--avgunbiased', type=int, required=False, default=0,
             help='1 to apply the average bias correction using the full GERA \
                     genotypes, 0 otherwise.')
+    parser.add_argument('--prune_regions', type=int, required=False, default=0,
+            help='the number of regions to prune in order to reduce variance')
 
     def readable_name(self):
         result = 'MLE_rnb,A={},ref={},ldwindow={},L={},units={},Radjust={}'.format(
@@ -134,6 +136,8 @@ class MLE_rnb(MLE_reg):
                     self.params.pop_size)
         if self.params.avgunbiased:
             result += 'avgunbiased'
+        if self.params.prune_regions > 0:
+            result +=',prune={}'.format(self.params.prune_regions)
         return result
 
     def window(self, A):
@@ -161,11 +165,51 @@ class MLE_rnb(MLE_reg):
         R = BlockDiag.ld_matrix(self.refpanel, W.irs.ranges(), 1000000) # bandwidth=infty
         pickle.dump(R, self.R_file(mode='wb'), 2)
         try: # if the plotting has some error we don't want to not save the stuff
-            R.plot(A.irs, filename=self.R_plotfilename())
+            # R.plot(A.irs, filename=self.R_plotfilename())
+            pass
         except:
             pass
         RA = R.zero_outside_irs(A.irs)
         pickle.dump(RA, self.RA_file(mode='wb'), 2)
+
+    def run(self, beta_num, sim):
+        R = pickle.load(self.R_file())
+        RA = pickle.load(self.RA_file())
+
+        if self.params.prune_regions > 0:
+            def var(L, LA, h2A, N):
+                LinvLA = np.linalg.solve(L, LA)
+                tr1 = np.einsum('ij,ji', LinvLA, LinvLA)
+                tr2 = np.einsum('ij,ji', LA, LinvLA)
+                return 2*tr1/float(N)**2 + 2*tr2*h2A/(float(N) * float(750))
+
+            print('computing variances')
+            variances = {}
+            for r in R.ranges():
+                variances[r] = var(R.ranges_to_arrays[r], RA.ranges_to_arrays[r],
+                        0.05, sim.sample_size)
+            print('total variance:', sum(variances.values()))
+
+            sortedrs = R.ranges()
+            sortedrs.sort(key=lambda r:variances[r])
+            worstrs = sortedrs[-self.params.prune_regions:]
+            for r in worstrs:
+                print('removing', r)
+                del R.ranges_to_arrays[r]
+                del RA.ranges_to_arrays[r]
+            print('new variance:', sum([variances[r] for r in R.ranges()]))
+
+        print(len(R.ranges()))
+        print(len(RA.ranges()))
+        # compute the results
+        results = []
+        for alphahat in sim.sumstats_aligned_to_refpanel(beta_num, self.refpanel):
+            alphahat = BlockDiag.from_big1darray(alphahat, R.ranges())
+            results.append(self.compute_statistic(
+                alphahat, R, RA, sim.sample_size, self.refpanel.N, memoize=True))
+            print(len(results), results[-1])
+
+        return results
 
     def compute_statistic(self, alphahat, R, RA, N, Nref, memoize=False):
         Rajd = Nadjust_after = None
@@ -186,28 +230,32 @@ class MLE_rnb(MLE_reg):
             A = SnpSubset(self.refpanel, bedtool=gs.bedtool)
             RA.zero_outside_irs(A.irs)
 
-        print('adding lambda')
-        Radjreg = Radj.add_ridge(self.params.Lambda, renormalize=True)
         if not memoize or not hasattr(self, 'bias'):
+            print('adding lambda')
+            Radjreg = Radj.add_ridge(self.params.Lambda, renormalize=True)
+            print('computing inverse')
+            self.Radjreginv = Radjreg.inv(Nadjust_after=Nadjust_after)
+
             print('done.computing bias...')
             A = SnpSubset(self.refpanel, bedtool=GenomicSubset(self.params.region).bedtool)
             W = self.window(A)
             if not self.params.avgunbiased:
-                tr = BlockDiag.solve(Radjreg, RA, Nadjust_after=Nadjust_after).trace()
+                tr = self.Radjreginv.dot(RA).trace()
                 self.scaling = 1
             else:
-                Radjreginv = Radjreg.inv(Nadjust_after=Nadjust_after)
-                tr = RA.dot(Radjreginv).dot(R).dot(Radjreginv).trace()
-                Q = R.dot(Radjreginv).dot(RA).dot(Radjreginv).dot(R)
+                tr = RA.dot(self.Radjreginv).dot(R).dot(self.Radjreginv).trace()
+                Q = R.dot(self.Radjreginv).dot(RA).dot(self.Radjreginv).dot(R)
                 Q.zero_outside_irs(A.irs)
                 self.scaling = A.num_snps() / Q.trace()
+            # self.bias = tr / N + \
+            #         float(self.refpanel.M-len(W.irs))/self.refpanel.M * \
+            #             self.params.sigma2g * tr / self.params.pop_size
             self.bias = tr / N + \
-                    float(self.refpanel.M-len(W.irs))/self.refpanel.M * \
                         self.params.sigma2g * tr / self.params.pop_size
             print('\nbias =', self.bias)
             print('scaling =', self.scaling)
 
-        betahat = BlockDiag.solve(Radjreg, alphahat, Nadjust_after=Nadjust_after)
+        betahat = self.Radjreginv.dot(alphahat)
 
         return self.scaling * (betahat.dot(RA.dot(betahat)) - self.bias)
 

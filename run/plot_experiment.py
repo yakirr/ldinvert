@@ -86,9 +86,13 @@ if __name__ == '__main__':
             my_results = np.empty((sim.num_betas,sim.num_samples_per_beta))
             my_truths = np.empty((sim.num_betas,sim.num_samples_per_beta))
             for beta in range(1, sim.num_betas+1):
-                my_truths[beta-1] = exp.truth.results(beta, sim)
-                my_results[beta-1] = e.results(beta, sim)
-                my_errors[beta-1] = my_results[beta-1] - my_truths[beta-1]
+                try:
+                    my_truths[beta-1] = exp.truth.results(beta, sim)
+                    my_results[beta-1] = e.results(beta, sim)
+                    my_errors[beta-1] = my_results[beta-1] - my_truths[beta-1]
+                except:
+                    print('warning: couldnt find results for', exp, e, beta)
+                    continue
 
             error_lists[e] = my_errors
             result_lists[e] = my_results

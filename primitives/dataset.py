@@ -25,6 +25,9 @@ class Dataset(object):
         self.__covariates = self.__proj = None
         self.__proj_covariates = None
 
+        if not hasattr(self, 'auxfiles_path'):
+            self.auxfiles_path = self.path
+
     @property
     def genotypes_bedfile(self):
         if self.__genotypes_bedfile is None:
@@ -91,9 +94,9 @@ class Dataset(object):
         return result
 
     def snp_coords(self):
-        ucscbedfilename = self.path + self.bfile + '.ucscbed'
+        ucscbedfilename = self.auxfiles_path + self.bfile + '.ucscbed'
         if os.path.exists(ucscbedfilename):
-            return BedTool(self.path + self.bfile + '.ucscbed')
+            return BedTool(ucscbedfilename)
         else:
             print('warning: ucscbedfile not found:', ucscbedfilename)
             return None

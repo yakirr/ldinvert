@@ -5,6 +5,7 @@ import math
 import pysnptools.util as psutil
 from pysnptools.util import IntRangeSet
 from pyutils import iter as it
+from time import time
 
 class BlockDiag(object):
     def __init__(self, ranges_to_arrays):
@@ -22,8 +23,9 @@ class BlockDiag(object):
             positions_to_flip = d.snp_consistency_vector(make_consistent_with)
         ranges_to_arrays = {}
 
+        t0 = time()
         def add_covariance_for_range(r):
-            print(r)
+            print(int(time()-t0), ':', r)
             range_genotypes = d.get_standardized_genotypes(r, indivs=indivs)
             ranges_to_arrays[r] = \
                 range_genotypes.T.dot(range_genotypes) / range_genotypes.shape[0]

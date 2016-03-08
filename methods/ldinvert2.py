@@ -1,7 +1,8 @@
 from __future__ import print_function, division
 import numpy as np
+import math
 import argparse
-import pickle
+import cPickle as pickle
 import os, time
 from pybedtools import BedTool
 from pysnptools.util import IntRangeSet
@@ -24,6 +25,13 @@ class Ldinvert(Estimator):
     parser.add_argument('--pop_size', type=int, required=False, default=10**9,
             help='the population size to adjust for when accounting for effects of snps \
                     outside the window. Defaults to essentially no correction.')
+    parser.add_argument('--num_chunks', type=int, required=False, default=1,
+            help='the number of chunks the LD blocks are getting split into')
+    parser.add_argument('--chunk', type=int, required=False, default=1,
+            help='the 1-based index of the chunk to analyze')
+    parser.add_argument('--preprocessonfly', type=int, required=False, default=0,
+            help='0 means do not preprocess on the fly; 1 means do the preprocessing' + \
+                    'on the fly')
 
     def readable_name(self):
         return 'Ldinvert,A={},L={:0.3f},ref={},bpf={},Npop={}'.format(
@@ -34,7 +42,7 @@ class Ldinvert(Estimator):
                 self.params.pop_size)
 
     def covariance_path(self):
-        return self.refpanel.path + 'pre.cov.bpf={}/'.format(
+        return self.refpanel.auxfiles_path + 'pre.cov.bpf={}/'.format(
                 self.params.breakpointsfile)
     def covariance_preprocessing_in_progress(self):
         return os.path.exists(self.covariance_path())
@@ -42,7 +50,7 @@ class Ldinvert(Estimator):
         fs.makedir(self.covariance_path())
 
     def invcovariance_path(self):
-        return self.refpanel.path + 'pre.invcov.L={:0.3f}.bpf={}/'.format(
+        return self.refpanel.auxfiles_path + 'pre.invcov.L={:0.3f}.bpf={}/'.format(
                 self.params.Lambda,
                 self.params.breakpointsfile)
     def invcovariance_preprocessing_in_progress(self):
@@ -57,27 +65,55 @@ class Ldinvert(Estimator):
                 self.params.breakpointsfile)
 
     def R_file(self, mode='rb'):
-        return open(self.covariance_path() + 'R.bd', mode)
+        return open(self.covariance_path() + 'R.{}of{}.bd'.format(
+            self.params.chunk,
+            self.params.num_chunks), mode)
     def Rri_file(self, mode='rb'):
-        return open(self.invcovariance_path() + 'Rri.bd', mode)
+        return open(self.invcovariance_path() + 'Rri.{}of{}.bd'.format(
+            self.params.chunk,
+            self.params.num_chunks), mode)
     def RA_file(self, mode='rb'):
-        return open(self.path_to_preprocessed_data() + 'RA.bd', mode)
+        return open(self.path_to_preprocessed_data() + 'RA.{}of{}.bd'.format(
+            self.params.chunk,
+            self.params.num_chunks), mode)
     def biasmatrix_file(self, mode='rb'):
-        return open(self.path_to_preprocessed_data() + 'ZR.bd', mode)
+        return open(self.path_to_preprocessed_data() + 'ZR.{}of{}.bd'.format(
+            self.params.chunk,
+            self.params.num_chunks), mode)
     def set_scalings(self, scalings):
-        pickle.dump(scalings, open(self.path_to_preprocessed_data() + 'scaling', 'w'))
+        pickle.dump(scalings, open(self.path_to_preprocessed_data() + 'scaling.{}of{}'.format(
+            self.params.chunk,
+            self.params.num_chunks), 'w'))
     def get_scalings(self):
-        return pickle.load(open(self.path_to_preprocessed_data() + 'scaling', 'r'))
+        return pickle.load(open(self.path_to_preprocessed_data() + 'scaling.{}of{}'.format(
+            self.params.chunk,
+            self.params.num_chunks), 'r'))
     def save_variance_matrices(self, Q, Z, QZ, QZR):
-        pickle.dump(Q, open(self.path_to_preprocessed_data() + 'Q.bd', 'wb'), 2)
-        pickle.dump(Z, open(self.path_to_preprocessed_data() + 'Z.bd', 'wb'), 2)
-        pickle.dump(QZ, open(self.path_to_preprocessed_data() + 'QZ.bd', 'wb'), 2)
-        pickle.dump(QZR, open(self.path_to_preprocessed_data() + 'QZR.bd', 'wb'), 2)
+        pickle.dump(Q, open(self.path_to_preprocessed_data() + 'Q.{}of{}.bd'.format(
+            self.params.chunk,
+            self.params.num_chunks), 'wb'), 2)
+        pickle.dump(Z, open(self.path_to_preprocessed_data() + 'Z.{}of{}.bd'.format(
+            self.params.chunk,
+            self.params.num_chunks), 'wb'), 2)
+        pickle.dump(QZ, open(self.path_to_preprocessed_data() + 'QZ.{}of{}.bd'.format(
+            self.params.chunk,
+            self.params.num_chunks), 'wb'), 2)
+        pickle.dump(QZR, open(self.path_to_preprocessed_data() + 'QZR.{}of{}.bd'.format(
+            self.params.chunk,
+            self.params.num_chunks), 'wb'), 2)
     def get_variance_matrices(self):
-        return (pickle.load(open(self.path_to_preprocessed_data() + 'Q.bd')),
-            pickle.load(open(self.path_to_preprocessed_data() + 'Z.bd')),
-            pickle.load(open(self.path_to_preprocessed_data() + 'QZ.bd')),
-            pickle.load(open(self.path_to_preprocessed_data() + 'QZR.bd')))
+        return (pickle.load(open(self.path_to_preprocessed_data() + 'Q.{}of{}.bd'.format(
+            self.params.chunk,
+            self.params.num_chunks))),
+            pickle.load(open(self.path_to_preprocessed_data() + 'Z.{}of{}.bd'.format(
+            self.params.chunk,
+            self.params.num_chunks))),
+            pickle.load(open(self.path_to_preprocessed_data() + 'QZ.{}of{}.bd'.format(
+            self.params.chunk,
+            self.params.num_chunks))),
+            pickle.load(open(self.path_to_preprocessed_data() + 'QZR.{}of{}.bd'.format(
+            self.params.chunk,
+            self.params.num_chunks))))
     def init(self):
         self.Rri = pickle.load(self.Rri_file())
         self.R = pickle.load(self.R_file())
@@ -86,9 +122,16 @@ class Ldinvert(Estimator):
         self.ZR = pickle.load(self.biasmatrix_file())
         self.Q, self.Z, self.QZ, self.QZR = self.get_variance_matrices()
 
+    def chunk_size(self, ranges):
+        return int(math.ceil(len(ranges) / self.params.num_chunks))
+    def ranges_in_chunk(self, ranges):
+        start = (self.params.chunk-1)*self.chunk_size(ranges)
+        end = min(len(ranges), start + self.chunk_size(ranges))
+        return ranges[start:end]
+
     def preprocess_memoryreq_GB(self):
         return 8
-    def preprocess(self):
+    def preprocess(self, use_filesystem=True):
         if not self.covariance_preprocessing_in_progress():
             print('covariance matrix not found. creating...')
             self.declare_covariance_preprocessing_in_progress()
@@ -133,11 +176,16 @@ class Ldinvert(Estimator):
     def compute_covariance(self):
         breakpoints = BedTool(paths.reference + self.params.breakpointsfile)
         blocks = SnpPartition(self.refpanel, breakpoints, remove_mhc=True)
-        R = BlockDiag.ld_matrix_blocks(self.refpanel, blocks.ranges())
+        R = BlockDiag.ld_matrix_blocks(self.refpanel, self.ranges_in_chunk(blocks.ranges()))
         pickle.dump(R, self.R_file(mode='wb'), 2)
 
     def compute_invcovariance(self):
         R = pickle.load(self.R_file())
+        if '_ref' in self.refpanel.name:
+            # print('this is a reference panel, so Im adjusting for the fact that the sample'+\
+                    # ' precision matrix will be inflated')
+            # R = R.adjusted_before_inversion(self.refpanel.N)
+            pass
         Rreg = R.add_ridge(self.params.Lambda, renormalize=True)
         Rri = Rreg.inv(Nadjust_after=None)
         pickle.dump(Rri, self.Rri_file(mode='wb'), 2)

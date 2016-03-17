@@ -168,10 +168,13 @@ class Dataset(object):
                 units=units)
 
     def get_standardized_genotypes(self, s, indivs=None):
+        return self.get_standardized_genotypes_in_iter(np.arange(s[0],s[1]), indivs=indivs)
+
+    def get_standardized_genotypes_in_iter(self, it, indivs=None):
         if indivs is None:
-            genotypes = self.genotypes_bedfile[:,s[0]:s[1]].read()
+            genotypes = self.genotypes_bedfile[:,it].read()
         else:
-            genotypes = self.genotypes_bedfile[indivs, s[0]:s[1]].read()
+            genotypes = self.genotypes_bedfile[indivs, it].read()
         genotypes.standardize(); genotypes.standardize()
         return genotypes.val
 

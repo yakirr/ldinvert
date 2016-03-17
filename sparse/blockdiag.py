@@ -159,7 +159,7 @@ class BlockDiag(object):
                 r:self.ranges_to_arrays[r].dot(other.ranges_to_arrays[r])
                 for r in set(self.ranges()) & set(other.ranges())
                 }
-        if result_ranges_to_arrays.values()[0].shape:
+        if not result_ranges_to_arrays or result_ranges_to_arrays.values()[0].shape:
             return BlockDiag(
                     result_ranges_to_arrays)
         else:

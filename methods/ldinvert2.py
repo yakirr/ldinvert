@@ -128,67 +128,85 @@ class Ldinvert(Estimator):
         start = (self.params.chunk-1)*self.chunk_size(ranges)
         end = min(len(ranges), start + self.chunk_size(ranges))
         return ranges[start:end]
+    def chunks_containing_region(self):
+        breakpoints = BedTool(paths.reference + self.params.breakpointsfile)
+        blocks = SnpPartition(self.refpanel, breakpoints, remove_mhc=True)
+        self.A = SnpSubset(self.refpanel, GenomicSubset(self.params.region).bedtool)
+        return [int(i / self.chunk_size(blocks.ranges()))
+                for i in blocks.indices_containing(self.A.irs)]
+
 
     def preprocess_memoryreq_GB(self):
         return 8
     def preprocess(self, use_filesystem=True):
-        if not self.covariance_preprocessing_in_progress():
-            print('covariance matrix not found. creating...')
-            self.declare_covariance_preprocessing_in_progress()
-            self.compute_covariance()
-        print('loading covariance matrix')
-        R = pickle.load(self.R_file())
+        if not self.covariance_preprocessing_in_progress() or not use_filesystem:
+            print('creating covariance matrix...')
+            if use_filesystem:
+                self.declare_covariance_preprocessing_in_progress()
+            self.R = self.compute_covariance()
+            if use_filesystem:
+                pickle.dump(self.R, self.R_file(mode='wb'), 2)
+        else:
+            print('loading covariance matrix')
+            self.R = pickle.load(self.R_file())
 
-        if not self.invcovariance_preprocessing_in_progress():
-            print('inverse covariance matrix not found. creating...')
-            self.declare_invcovariance_preprocessing_in_progress()
-            self.compute_invcovariance()
-        print('loading inverse covariance matrix')
-        Rri = pickle.load(self.Rri_file())
+        if not self.invcovariance_preprocessing_in_progress() or not use_filesystem:
+            print('creating inverse covariance matrix')
+            if use_filesystem:
+                self.declare_invcovariance_preprocessing_in_progress()
+            self.Rri = self.compute_invcovariance()
+            if use_filesystem:
+                pickle.dump(self.Rri, self.Rri_file(mode='wb'), 2)
+        else:
+            print('loading inverse covariance matrix')
+            self.Rri = pickle.load(self.Rri_file())
 
         t0 = time.time()
         print(time.time() - t0, ': creating and saving RA')
-        A = SnpSubset(self.refpanel, GenomicSubset(self.params.region).bedtool)
-        RA = R.copy(); RA.zero_outside_irs(A.irs)
-        pickle.dump(RA, self.RA_file(mode='wb'), 2)
+        self.A = SnpSubset(self.refpanel, GenomicSubset(self.params.region).bedtool)
+        self.RA = self.R.copy(); self.RA.zero_outside_irs(self.A.irs)
+        if use_filesystem:
+            pickle.dump(self.RA, self.RA_file(mode='wb'), 2)
 
         print(time.time() - t0, ': computing and saving scaling')
-        Z = Rri.dot(RA.dot(Rri))
-        Q = R.dot(Z).dot(R)
-        QA = Q.copy()
-        QA.zero_outside_irs(A.irs)
-        scalings = {r :
-                len(A.irs & IntRangeSet(r)) / np.trace(QA.ranges_to_arrays[r])
+        self.Z = self.Rri.dot(self.RA.dot(self.Rri))
+        self.Q = self.R.dot(self.Z).dot(self.R)
+        QA = self.Q.copy()
+        QA.zero_outside_irs(self.A.irs)
+        self.scalings = {r :
+                len(self.A.irs & IntRangeSet(r)) / np.trace(QA.ranges_to_arrays[r])
                 for r in QA.ranges()}
-        print(time.time() - t0, ': scalings are', scalings)
-        self.set_scalings(scalings)
+        print(time.time() - t0, ': scalings are', self.scalings)
+        if use_filesystem:
+            self.set_scalings(self.scalings)
 
         print(time.time() - t0, ': computing and saving bias matrix')
-        ZR = RA.dot(Rri).dot(R).dot(Rri)
-        pickle.dump(ZR, self.biasmatrix_file(mode='wb'), 2)
+        self.ZR = self.RA.dot(self.Rri).dot(self.R).dot(self.Rri)
+        if use_filesystem:
+            pickle.dump(self.ZR, self.biasmatrix_file(mode='wb'), 2)
 
         print(time.time() - t0, ': variance matrices')
-        QZ = Q.dot(Z)
-        QZR = QZ.dot(R)
-        self.save_variance_matrices(Q, Z, QZ, QZR)
+        self.QZ = self.Q.dot(self.Z)
+        self.QZR = self.QZ.dot(self.R)
+        if use_filesystem:
+            self.save_variance_matrices(self.Q, self.Z, self.QZ, self.QZR)
         print(time.time() - t0, ': done')
 
     def compute_covariance(self):
         breakpoints = BedTool(paths.reference + self.params.breakpointsfile)
         blocks = SnpPartition(self.refpanel, breakpoints, remove_mhc=True)
-        R = BlockDiag.ld_matrix_blocks(self.refpanel, self.ranges_in_chunk(blocks.ranges()))
-        pickle.dump(R, self.R_file(mode='wb'), 2)
+        myranges = self.ranges_in_chunk(blocks.ranges())
+        print('working on', len(myranges), 'ld blocks')
+        return BlockDiag.ld_matrix_blocks(self.refpanel, myranges)
 
     def compute_invcovariance(self):
-        R = pickle.load(self.R_file())
         if '_ref' in self.refpanel.name:
             # print('this is a reference panel, so Im adjusting for the fact that the sample'+\
                     # ' precision matrix will be inflated')
             # R = R.adjusted_before_inversion(self.refpanel.N)
             pass
-        Rreg = R.add_ridge(self.params.Lambda, renormalize=True)
-        Rri = Rreg.inv(Nadjust_after=None)
-        pickle.dump(Rri, self.Rri_file(mode='wb'), 2)
+        Rreg = self.R.add_ridge(self.params.Lambda, renormalize=True)
+        return Rreg.inv(Nadjust_after=None)
 
     # definitions:
     # Z = Rri RA Rri
@@ -221,6 +239,10 @@ class Ldinvert(Estimator):
 
         return np.concatenate([np.array([results]).T,
             np.array([variances]).T], axis=1)
+
+    def run_realdata(self, sumstatsfile):
+        self.preprocess(use_filesystem=False)
+        print('done')
 
     def c(self, r):
         return np.linalg.norm(np.concatenate(

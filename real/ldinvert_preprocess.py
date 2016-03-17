@@ -8,14 +8,15 @@ from pyutils import bsub
 
 def main(args):
     est = ldinvert2.Ldinvert(refpanel='UK10Khg19.'+str(args.chrom),
-            breakpointsfile='pickrell_breakpoints.hg19.eur.bed',
+            breakpointsfile='many_breakpoints.hg19.eur.bed',
             region='50',
             Lambda=0.03,
             pop_size=10**15,
-            num_chunks=5,
+            num_chunks=500,
             chunk=args.chunk)
+    print(est.chunks_containing_region())
 
-    est.preprocess()
+    # est.run_realdata('')
 
 def submit(args):
     my_args = ['main',

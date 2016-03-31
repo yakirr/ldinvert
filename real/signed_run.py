@@ -15,7 +15,7 @@ def main(args):
 
     point_estimate = 0
     variance = 0
-    for chrnum in range(1,23):
+    for chrnum in range(1,23)[-1:]:
         print(chrnum, 'reading cannot file')
         cannot = pd.read_csv('{}.{}.cannot.gz'.format(args.annot_stem, chrnum),
                 header=0, sep='\t', compression='gzip')

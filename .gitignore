@@ -58,3 +58,7 @@ target/
 
 # vim swap files
 *.swp
+
+# project-specific stuff
+snippets/
+toplot/

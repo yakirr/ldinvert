@@ -129,7 +129,6 @@ class SnpPartition(object):
         self.last_snps = np.array([])
         for chrom in dataset.chromosomes():
             chromstr = 'chr' + str(chrom)
-            print(chromstr)
             c = dataset.snp_coords().filter(lambda i: i.chrom == chromstr).closest(
                     breakpoints_bedtool.sort(), iu=True, D='ref').saveas()
             closest_breakpoints = np.array([' '.join(i[3:-1]) for i in c] + [''])
@@ -143,7 +142,7 @@ class SnpPartition(object):
         self.mhc = None
 
     def ranges(self):
-        ranges = zip(np.concatenate([[0], self.last_snps]), self.last_snps)
+        ranges = zip(np.concatenate([[0], self.last_snps]), self.last_snps+1)
         if not self.remove_mhc:
             return ranges
         else:

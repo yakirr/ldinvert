@@ -10,7 +10,6 @@ import paths
 def main(args):
     np.random.seed(args.beta_num + args.sample_num * 10000)
     sim = SumstatSimulation(args.sim_name)
-    d = Dataset(sim.dataset)
     pretty.print_namespace(sim); print()
 
     # read in noiseless phenotypes
@@ -25,25 +24,34 @@ def main(args):
     print('adding noise. sigma2e =', sigma2e)
     Y += np.sqrt(sigma2e) * np.random.randn(*Y.shape)
 
-    if sim.condition_on_covariates:
-        print('projecting covariates out of Y')
-        Y = d.project_out_covariates(Y, covariates=d.covariates[indices])
+    alphahat = np.array([])
+    for chrnum in sim.chromosomes:
+        print('chr', chrnum)
+        d = Dataset(sim.dataset+'.'+str(chrnum))
 
-    alphahat = np.zeros(d.M)
-    t0 = time()
-    def compute_sumstats_for_slice(s):
-        # X will be N x M
-        print(int(time() - t0), ': getting genotypes from file. SNPs', s)
-        X = d.get_standardized_genotypes(s)[indices]
+        # TODO: this should be done only once, not once per chromosome
+        # if sim.condition_on_covariates:
+        #     print('projecting covariates out of Y')
+        #     Y = d.project_out_covariates(Y, covariates=d.covariates[indices])
 
-        if sim.condition_on_covariates:
-            print(int(time() - t0), ': projecting out covariates')
-            X = d.project_out_covariates(X, covariates=d.covariates[indices])
+        t0 = time()
+        myalphahat = np.zeros(d.M)
+        def compute_sumstats_for_slice(s):
+            # X will be N x M
+            print(int(time() - t0), ': getting genotypes from file. SNPs', s)
+            X = d.get_standardized_genotypes(s)[indices]
 
-        print(int(time() - t0), ': computing sumstats. SNPs', s)
-        alphahat[s[0]:s[1]] = X.T.dot(Y) / sim.sample_size
-        del X
-    map(compute_sumstats_for_slice, d.slices())
+            # TODO: projecting out covariates not supported, see above
+            # if sim.condition_on_covariates:
+            #     print(int(time() - t0), ': projecting out covariates')
+            #     X = d.project_out_covariates(X, covariates=d.covariates[indices])
+
+            print(int(time() - t0), ': computing sumstats. SNPs', s)
+            myalphahat[s[0]:s[1]] = X.T.dot(Y) / sim.sample_size
+            del X
+        map(compute_sumstats_for_slice, d.slices())
+
+        alphahat = np.concatenate((alphahat, myalphahat))
 
     # write output
     def write_output():
@@ -58,10 +66,10 @@ def main(args):
 def submit(args):
     sim = SumstatSimulation(args.sim_name)
     def submit_beta(beta_num):
-        my_args = ['--sim_name', args.sim_name,
+        my_args = ['--sim-name', args.sim_name,
                 'main',
-                '--beta_num', str(beta_num),
-                '--sample_num', '$LSB_JOBINDEX']
+                '--beta-num', str(beta_num),
+                '--sample-num', '$LSB_JOBINDEX']
         outfilepath = \
             sim.path_to_beta(beta_num) + \
             '.sim_sumstats.%I.out'
@@ -77,14 +85,14 @@ def submit(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--sim_name', type=str, required=True,
+    parser.add_argument('--sim-name', type=str, required=True,
             help='the name of the set of simulation parameters to use from simulations.json')
 
     main_parser, submit_parser = bsub.add_main_and_submit(parser, main, submit)
 
-    main_parser.add_argument('--beta_num', type=int, required=True,
+    main_parser.add_argument('--beta-num', type=int, required=True,
             help='the 1-based index of the beta to use')
-    main_parser.add_argument('--sample_num', type=int, required=True,
+    main_parser.add_argument('--sample-num', type=int, required=True,
             help='the 1-based index specifying which independent sample we\'re on for \
                     a given beta')
 

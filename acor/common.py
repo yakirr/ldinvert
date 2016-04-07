@@ -10,6 +10,18 @@ import paths
 import pickle
 
 
+def get_ldscores(ldscoresfile):
+    return pd.read_csv(ldscoresfile, header=0, sep='\t', compression='gzip')
+
+
+
+
+
+
+
+
+
+
 def results_filename(annot_stems, sumstats_stem, chrnum=None):
     annot_name = '-'.join([annot_stem.split('/')[-1] for annot_stem in annot_stems])
     pheno_name = sumstats_stem.split('/')[-1]
@@ -117,106 +129,3 @@ def mult_by_R_ldblocks(V, refpanel, refpanel_indices=None):
         return result[refpanel_indices] / refpanel.N
     else:
         return result / refpanel.N
-
-def main(args):
-    print('chrom', args.chrnum)
-    sumstats = get_sumstats(args)
-    annot, annot_names = get_annot(args)
-    refpanel, refpanel_bim = get_refpanel(args)
-    N, alphahat, V, refpanel_indices, _ = merge_files(
-        refpanel_bim, sumstats, annot, annot_names)
-    Vw = V
-
-    print('computing RV and RVw')
-    RV = mult_by_R_ldblocks(V, refpanel, refpanel_indices)
-    RVw = RV #mult_by_R_ldblocks(Vw, refpanel, refpanel_indices)
-
-    print('computing Vw^TRV')
-    VwTRV = Vw.T.dot(RV)
-    VwTRVw = Vw.T.dot(RVw)
-    print('\tVw^TRV =', VwTRV)
-
-    VwTalphahat = Vw.T.dot(alphahat)
-    print('chr', args.chrnum, ':', np.linalg.solve(VwTRV, VwTalphahat))
-
-    pickle.dump((VwTalphahat, VwTRV, VwTRVw, N),
-            open(results_filename(
-                args.annot_stems, args.sumstats_stem,
-                chrnum=args.chrnum), 'w'))
-
-def submit(args):
-    my_args = ['--annot_stems', ' '.join(args.annot_stems),
-        '--sumstats_stem', args.sumstats_stem,
-        '--refpanel', args.refpanel,
-        'main',
-        '--chrnum', '$LSB_JOBINDEX']
-    outfilepath = \
-        results_filename(args.annot_stems, args.sumstats_stem,
-                chrnum='%I') + '.log'
-
-    bsub.submit(
-            ['python', '-u', __file__] + my_args,
-            outfilepath,
-            jobname='run[1-22]', debug=args.debug)
-
-def merge(args):
-    VwTalphahat = 0
-    VwTRV = 0
-    VwTRVw = 0
-    N = 0
-    for chrnum in range(1,23):
-        if chrnum == 6:
-            continue
-        my_VwTalphahat, my_VwTRV, my_VwTRVw, N = pickle.load(open(
-            results_filename(
-                args.annot_stems, args.sumstats_stem,
-                chrnum=chrnum)))
-        print('chr {}: est={}, VwTRV={}'.format(
-            chrnum,
-            np.linalg.solve(my_VwTRV, my_VwTalphahat),
-            my_VwTRV))
-        VwTalphahat += my_VwTalphahat
-        VwTRV += my_VwTRV
-        VwTRVw += my_VwTRVw
-    mu = np.linalg.solve(VwTRV, VwTalphahat)
-    print('VwTRV=', VwTRV)
-    wVTRVi = np.linalg.inv(VwTRV)
-    # variance = 1/N*wVTRVi + 1/N * wVTRVi.dot(ssq).dot(wVTRVi)
-    variance = 1/N*wVTRVi.dot(VwTRVw).dot(wVTRVi.T)
-    print('covariance of muhat=', variance)
-
-    output = ''
-    for i, c in enumerate(mu):
-        output += '{} ({}), Z={}\n'.format(
-            c,
-            np.sqrt(variance[i,i]),
-            c / np.sqrt(variance[i,i]))
-    output += 'sum: {} ({}), Z={}\n'.format(
-            np.sum(mu),
-            np.sqrt(np.sum(variance)),
-            np.sum(mu) / np.sqrt(np.sum(variance)))
-    print(output)
-    with open(results_filename(args.annot_stems, args.sumstats_stem), 'w') as f:
-        f.write(output)
-
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--annot_stems', type=str, required=True, nargs='+',
-            help='paths to annot files, not including chromosome number and extension.  ' + \
-                    'For example: path/to/annot1 path/to/annot2')
-    parser.add_argument('--sumstats_stem', type=str, required=True,
-            help='path to sumstats file, not including .sumstats.gz extension.')
-    parser.add_argument('--refpanel', type=str, required=True,
-            help='the name of the reference panel, for synchronizing allele coding')
-
-    main_parser, submit_parser, merge_parser = bsub.add_main_and_submit(parser,
-            main,
-            submit,
-            merge)
-    main_parser.add_argument('--chrnum', type=int, required=True,
-            help='which chromosome to analyze')
-    submit_parser.add_argument('-debug', action='store_true', default=False)
-
-    bsub.choose_parser_and_run(parser)
-

@@ -54,6 +54,9 @@ def main(args):
     sigma2g = 0.25 / refpanel.M
     weights = l2_ss / N + sigma2g * l2_ss**2
     print('\tmean weight: {}, stddev: {}'.format(np.mean(1./weights), np.std(1./weights)))
+    print('\t\tl2_ss/N: {}, stddev:{}'.format(np.mean(l2_ss / N), np.std(l2_ss/N)))
+    print('\t\tsigma2g*l2_ss^2: {} std:{}'.format(
+        np.mean(sigma2g*l2_ss**2), np.std(sigma2g*l2_ss**2)))
 
     RV = signed_fe.mult_by_R_ldblocks(V, refpanel)
 

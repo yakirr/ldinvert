@@ -12,21 +12,33 @@ import paths
 
 
 class Dataset(object):
-    def __init__(self, name, forced_M=None, chrnum=None):
+    def __init__(self, name, forced_M=None, chrnum=None, bfile=None, auxfiles_path=None,
+            reference_genome=None):
         self.name = name
         self.forced_M = forced_M
-        self.__dict__.update(
-                json.load(open(paths.metadata + 'datasets.json'))[name])
-        if chrnum:
-            self.name += '|chr' + str(int(chrnum))
-            self.bfile += '.' + str(int(chrnum))
+
+        if bfile is None: # then load dataset from dictionary
+            self.__dict__.update(
+                    json.load(open(paths.metadata + 'datasets.json'))[name])
+            if chrnum:
+                self.name += '|chr' + str(int(chrnum))
+                self.bfile += '.' + str(int(chrnum))
+        else:
+            self.path = bfile[:bfile.rfind('/')] + '/'
+            self.bfile = bfile[bfile.rfind('/'):]
+            self.reference_genome = reference_genome
 
         self.__genotypes_bedfile = self.__N = self.__M = self.__chrom_boundaries = None
         self.__covariates = self.__proj = None
         self.__proj_covariates = None
+        self.__bim = None
+        self.__snpcoords = None
 
         if not hasattr(self, 'auxfiles_path'):
-            self.auxfiles_path = self.path
+            if auxfiles_path is None:
+                self.auxfiles_path = self.path
+            else:
+                self.auxfiles_path = auxfiles_path
 
     @property
     def genotypes_bedfile(self):
@@ -36,6 +48,14 @@ class Dataset(object):
             else:
                 self.__genotypes_bedfile = Bed(self.path + self.bfile)[:,:self.forced_M]
         return self.__genotypes_bedfile
+
+    @property
+    def bim(self):
+        if self.__bim is None:
+            self.__bim = pd.read_csv(self.genotypes_bedfile.filename + '.bim',
+                sep='\t',
+                names=['CHR', 'SNP', 'cM', 'BP', 'A1', 'A2'])
+        return self.__bim
 
     @property
     def N(self):
@@ -94,12 +114,22 @@ class Dataset(object):
         return result
 
     def snp_coords(self):
-        ucscbedfilename = self.auxfiles_path + self.bfile + '.ucscbed'
-        if os.path.exists(ucscbedfilename):
-            return BedTool(ucscbedfilename)
-        else:
-            print('warning: ucscbedfile not found:', ucscbedfilename)
-            return None
+        if self.__snpcoords is None:
+            ucscbedfilename = self.auxfiles_path + self.bfile + '.ucscbed'
+            if os.path.exists(ucscbedfilename):
+                self.__snpcoords = BedTool(ucscbedfilename)
+            else:
+                print('NOTE: ucscbed file for', self.bfile, 'not found. creating...')
+                ucscbed = []
+                for row in self.bim.iterrows():
+                    ucscbed.append('chr{}\t{}\t{}'.format(
+                        row[1]['CHR'],
+                        row[1]['BP'],
+                        int(row[1]['BP'])+1))
+                print('DONE')
+                self.__snpcoords = BedTool('\n'.join(ucscbed), from_string=True).saveas(
+                        self.auxfiles_path + self.bfile + '.ucscbed')
+        return self.__snpcoords
 
     def mhc_bedtool(self):
         mhc_filename = paths.reference + self.reference_genome + '.MHC.bed'

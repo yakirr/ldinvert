@@ -12,7 +12,16 @@ class SumstatSimulation(object):
         self.name = name
         self.__dict__.update(
                 json.load(open(path + name + '.json')))
-        self.__dataset = Dataset(self.dataset)
+        if self.chromosomes is not None:
+            self.__dataset = {
+                    c : Dataset(self.dataset+'.'+str(c))
+                    for c in self.chromosomes}
+            self.by_chrom = True
+        else:
+            self.__dataset = {
+                    0 : Dataset(self.dataset)
+                    }
+            self.by_chrom = False
 
     def __str__(self):
         result = ''
@@ -30,10 +39,15 @@ class SumstatSimulation(object):
                 self.condition_on_covariates)
 
     def path_to_genotypes(self):
-        return self.__dataset.path
+        return self.__dataset.values()[0].path
+    def path_to_auxfiles(self):
+        if self.by_chrom:
+            return self.__dataset.values()[0].auxfiles_path + '../'
+        else:
+            return self.__dataset.values()[0].auxfiles_path
 
     def path(self, create=True):
-        path = self.path_to_genotypes() + self.name + '/'
+        path = self.path_to_auxfiles() + self.name + '/'
         if create:
             fs.makedir(path)
         return path
@@ -57,8 +71,8 @@ class SumstatSimulation(object):
         return open(self.path_to_beta(beta_num) +
                 str(index) + '.alphahat', mode)
 
-    def sumstats_aligned_to_refpanel(self, beta_num, refpanel):
-        to_flip = self.__dataset.snp_consistency_vector(refpanel)
+    def sumstats_aligned_to_refpanel(self, beta_num, refpanel, chrnum):
+        to_flip = self.__dataset[chrnum].snp_consistency_vector(refpanel)
 
         for alphahat in self.sumstats_files(beta_num):
             alphahat[to_flip] *= -1

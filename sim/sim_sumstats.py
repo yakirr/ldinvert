@@ -1,5 +1,6 @@
 from __future__ import print_function, division
 import numpy as np
+import pandas as pd
 import pickle, argparse, subprocess
 from time import time
 from pyutils import bsub, pretty
@@ -25,9 +26,11 @@ def main(args):
     Y += np.sqrt(sigma2e) * np.random.randn(*Y.shape)
 
     alphahat = np.array([])
+    output = pd.DataFrame()
     for chrnum in sim.chromosomes:
         print('chr', chrnum)
         d = Dataset(sim.dataset+'.'+str(chrnum))
+        output = output.append(d.bim)
 
         # TODO: this should be done only once, not once per chromosome
         # if sim.condition_on_covariates:
@@ -53,6 +56,9 @@ def main(args):
 
         alphahat = np.concatenate((alphahat, myalphahat))
 
+    output['N'] = sim.sample_size
+    output['Z'] = alphahat * np.sqrt(sim.sample_size)
+    output = output[['SNP','A1','A2','Z','N']]
     # write output
     def write_output():
         pickle.dump(indices, sim.individuals_file(
@@ -61,6 +67,9 @@ def main(args):
                     args.beta_num, args.sample_num, 'wb'), 2)
         pickle.dump(alphahat, sim.sumstats_file(
                     args.beta_num, args.sample_num, 'wb'), 2)
+        output.to_csv(sim.sumstats_df_file(
+                    args.beta_num, args.sample_num, 'wb'),
+                    sep='\t', index=False)
     write_output()
 
 def submit(args):

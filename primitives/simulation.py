@@ -1,5 +1,6 @@
 from __future__ import print_function, division
 import json
+import gzip
 import pickle
 import pandas as pd
 from pyutils import fs
@@ -70,6 +71,9 @@ class SumstatSimulation(object):
     def sumstats_file(self, beta_num, index, mode='rb'):
         return open(self.path_to_beta(beta_num) +
                 str(index) + '.alphahat', mode)
+    def sumstats_df_file(self, beta_num, index, mode='rb'):
+        return gzip.open(self.path_to_beta(beta_num) +
+                str(index) + '.sumstats.gz', mode)
 
     def sumstats_aligned_to_refpanel(self, beta_num, refpanel, chrnum):
         to_flip = self.__dataset[chrnum].snp_consistency_vector(refpanel)

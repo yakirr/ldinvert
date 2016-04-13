@@ -35,6 +35,34 @@ class Architecture(object):
         self.__dict__.update(
                 json.load(open(paths.architectures + name + '.json')))
 
+    def get_normalization(self, Eh2g, allchroms):
+        # figure out total sqnorms of the annotations
+        sqnorms = {}
+        for annot_file in self.annot_files:
+            for c in allchroms[:1]:
+                a = Annotation(annot_file, c)
+                sqnorms.update(a.get_sqnorms())
+            for c in allchroms[1:]:
+                a = Annotation(annot_file, c)
+                for n, norm in a.get_norms().items():
+                    sqnorms[n] += norm
+        print(sqnorms)
+        sizes = {}
+        for annot_file in self.annot_files:
+            for c in allchroms[:1]:
+                a = Annotation(annot_file, c)
+                sizes.update(a.get_sizes())
+            for c in allchroms[1:]:
+                a = Annotation(annot_file, c)
+                for n, norm in a.get_norms().items():
+                    sizes[n] += norm
+        print(sizes)
+
+        total_variance = np.sum([sqnorms[n] * mu**2 for n, mu in self.mean_effects.items()])
+        total_variance += np.sum([
+            sizes[n] * e['sigma2'] for n, e in self.variance_effects.items()])
+        return Eh2g / total_variance, sqnorms, sizes
+
     # returns an array that is genome size x num_samples
     def draw_effect_sizes(self, dataset_name, Eh2g, chrnum, allchroms, num_samples=1):
         d = Dataset(dataset_name + '.' + str(chrnum))
@@ -44,32 +72,18 @@ class Architecture(object):
         for annot_file in self.annot_files:
             a = Annotation(annot_file, chrnum)
             annotations.update(a.get_vectors(d))
-
-        # figure out total norms of the annotations
-        norms = {}
-        for annot_file in self.annot_files:
-            for c in allchroms[:1]:
-                a = Annotation(annot_file, c)
-                norms.update(a.get_norms())
-            for c in allchroms[1:]:
-                a = Annotation(annot_file, c)
-                for n, norm in a.get_norms().items():
-                    norms[n] += norm
         print(annotations)
-        print(norms)
 
-        total_variance = np.sum([norms[n] * mu**2 for n, mu in self.mean_effects.items()])
-        total_variance += np.sum([
-            norms[n] * e['sigma2'] for n, e in self.variance_effects.items()])
-        normalization = Eh2g / total_variance
+        # figure out what to divide coefficients by to get the right heritability
+        normalization, sqnorms, sizes = self.get_normalization(Eh2g, allchroms)
 
         class local:
             result = np.zeros((d.M, num_samples))
         def add_variance_effect((n, e)):
             per_snp_variance = e['sigma2'] * normalization
-            print('norm of', n, 'is', norms[n])
+            print('size of', n, 'is', sizes[n])
             print('per-SNP variance is', per_snp_variance)
-            print('contributing heritability of', per_snp_variance * norms[n], 'over all chr')
+            print('contributing heritability of', per_snp_variance * sizes[n], 'over all chr')
             esd = EffectSizeDist(e['effectdist'])
             local.result[np.flatnonzero(annotations[n])] += esd.draw_effect_sizes(
                     np.count_nonzero(annotations[n]), num_samples, per_snp_variance)
@@ -77,11 +91,15 @@ class Architecture(object):
 
         def add_mean_effect((n, mu)):
             real_mu = mu * np.sqrt(normalization)
-            print('norm of', n, 'is', norms[n])
+            print('norm of', n, 'is', sqnorms[n])
             print('per-SNP mu is', real_mu)
-            print('contributing heritability of', real_mu**2 * norms[n], 'over all chr')
+            print('contributing heritability of', real_mu**2 * sqnorms[n], 'over all chr')
             local.result += (annotations[n] * real_mu)[:,None]
         map(add_mean_effect, self.mean_effects.items())
+
+        result_df = d.bim.copy()
+        result_df.merge(
+        # TODO: return beta as a dataframe with allele information
 
         return local.result
 
@@ -93,5 +111,5 @@ if __name__ == '__main__':
     print()
 
     a = Architecture('test')
-    betas = a.draw_effect_sizes('UK10Khg19', 0.5, 22, [22], num_samples=2)
-    print(betas[290:310])
+    betas = a.draw_effect_sizes('GERAimp.wim5', 0.5, 22, [22], num_samples=2)
+    print(betas[:1000])

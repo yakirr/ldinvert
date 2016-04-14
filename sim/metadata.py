@@ -38,10 +38,16 @@ class Simulation(object):
         self.architecture = Architecture(self.architecture)
         self.architecture.set_pheno_var(self.h2g, self.chromosomes)
 
-    def beta_folder(self, beta_num):
-        folder = '{}{}/{}/{}/'.format(paths.simsumstats,
-            self.dataset.name, self.name, beta_num)
-        fs.makedir(folder)
+    def root_folder(self, create=True):
+        folder = '{}{}/{}/'.format(paths.simsumstats,
+                self.dataset.name, self.name)
+        if create:
+            fs.makedir(folder)
+        return folder
+    def beta_folder(self, beta_num, create=True):
+        folder = '{}{}/'.format(self.root_folder(), beta_num)
+        if create:
+            fs.makedir(folder)
         return folder
     def beta_filename(self, beta_num, chrnum):
         return '{}{}.beta.gz'.format(

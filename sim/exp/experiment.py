@@ -1,8 +1,8 @@
 from __future__ import print_function, division
 import itertools
 import json
-from primitives import SumstatSimulation
-import methods
+import sim.metadata as sm
+import sim.methods as smethods
 from pyutils import fs
 import paths
 
@@ -19,15 +19,15 @@ class Estimators(object):
     @classmethod
     def create_estimator_from_json(cls, json_entry):
         method_name = json_entry['method']; del json_entry['method']
-        print(method_name)
-        return methods.find_method(method_name)(**json_entry)
+        print('creating estimator', method_name)
+        return smethods.find_method(method_name)(**json_entry)
 
 
 class Simulations(object):
     def __init__(self, simulation_names):
         self.simulations = []
         for sim_name in simulation_names:
-            self.simulations.append(SumstatSimulation(sim_name))
+            self.simulations.append(sm.Simulation(sim_name))
 
     def __iter__(self):
         return self.simulations.__iter__()
@@ -48,21 +48,21 @@ class Experiment(object):
             fs.makedir(path)
         return path
 
-    def plot_filename(self, sim):
-        return self.results_folder() + sim.readable_name() + '.results.png'
+    # def plot_filename(self, s):
+    #     return self.results_folder() + s.readable_name() + '.results.png'
 
-    def resultstsv_filename(self, sim, est):
-        return self.results_folder() + sim.readable_name() + '.' + \
-                est.readable_name() + '.results.tsv'
+    # def resultstsv_filename(self, s, est):
+    #     return self.results_folder() + s.readable_name() + '.' + \
+    #             est.readable_name() + '.results.tsv'
 
-    def purpose_filename(self):
-        return self.results_folder() + 'purpose.txt'
+    # def purpose_filename(self):
+    #     return self.results_folder() + 'purpose.txt'
 
     def estimators_and_truth(self):
         return itertools.chain(self.estimators, [self.truth])
 
 if __name__ == '__main__':
-    exp = Experiment('2016.02.04_ldinvert_Rbiasadjustment')
+    exp = Experiment('2016.04.13.1_testmethod')
 
     for s in exp.simulations:
         for e in exp.estimators_and_truth():

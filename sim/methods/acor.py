@@ -12,8 +12,8 @@ import paths
 class Acor(Estimator):
     parser = argparse.ArgumentParser(add_help=False, parents=[Estimator.parser])
     parser.add_argument('--annot_chr', type=str, required=True,
-            help='path to a comma-delimited set of annotgz files, ' + \
-                    'not including chromosome number')
+            help='comma-delimited set of paths to annotgz files, ' + \
+                    'not including chromosome number and extension')
     parser.add_argument('--coeff', type=str, required=True,
             help='the name of the coefficient to report')
     parser.add_argument('--kind', type=str, required=True,

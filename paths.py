@@ -1,7 +1,7 @@
 from __future__ import print_function, division
 
 
-code = '/groups/price/yakir/py/'
+code = '/groups/price/hilary/ldinvert/'
 foreign = '/groups/price/yakir/foreign/'
 
 data = '/groups/price/yakir/data/'

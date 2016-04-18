@@ -4,30 +4,14 @@ import json
 import pandas as pd
 from pyutils import fs, memo
 from phenotype import Architecture
+import primitives.dataset as prd
 import paths
 
-class Dataset(object):
+class Dataset(prd.Dataset):
     def __init__(self, name, datasets_dict_path=paths.metadata+'datasets.json'):
         self.name=name
         self.__dict__.update(
                 json.load(open(datasets_dict_path))[name])
-        self.__bim_dfs = {}
-
-    def bfile(self, chrnum):
-        return self.path + self.bfile_chr + str(chrnum)
-    def frq_file(self, chrnum):
-        return self.bfile(chrnum) + '.frq'
-    @memo.memoized
-    def frq_df(self, chrnum):
-        return pd.read_csv(self.frq_file(chrnum), delim_whitespace=True, header=0)
-
-    @memo.memoized
-    def bim_df(self, chrnum):
-        if chrnum not in self.__bim_dfs:
-            self.__bim_dfs[chrnum] = pd.read_csv(self.bfile(chrnum)+'.bim',
-                names=['CHR','SNP','CM','BP','A1','A2'],
-                sep='\t')
-        return self.__bim_dfs[chrnum]
 
 class Simulation(object):
     def __init__(self, name, path=paths.simulations):
@@ -75,3 +59,9 @@ class Simulation(object):
     def sumstats_file(self, beta_num, mode='r'):
         return gzip.open(self.sumstats_filename(beta_num), mode=mode)
 
+
+if __name__ == '__main__':
+    d = Dataset('1000G3.wim5u')
+    print(d.path)
+    print(d.bfile_chr)
+    print(d.bfile(22))

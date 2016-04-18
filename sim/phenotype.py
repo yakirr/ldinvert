@@ -35,7 +35,7 @@ class Architecture(object):
                 json.load(open(paths.architectures + name + '.json')))
         self.annotations = {}
         for annot_file in self.annot_files:
-            self.annotations[annot_file] = Annotation(annot_file)
+            self.annotations[annot_file] = Annotation(paths.annotations+annot_file)
 
     def set_pheno_var(self, h2g, chroms):
         self.sqnorms = pd.DataFrame()
@@ -52,33 +52,41 @@ class Architecture(object):
                 self.sizes[n][0] * e['sigma2'] for n, e in self.variance_effects.items()])
         self.normalization = h2g / total_variance
 
+    # returns a tuple consisting of a dict of mean effects and a dict of variance effects
     def params(self):
-        raise NotImplementedError()
+        return ({ n: mu * np.sqrt(self.normalization)
+                for n, mu in self.mean_effects.items()},
+            { n: e['sigma2'] * self.normalization
+                for n,e in self.variance_effects.items()})
 
-    def __find_annot(self, n, chrnum):
+
+    def __find_annot(self, n, chrnum, signed=True):
         matches = [a for a in self.annotations.values() if n in a.names(chrnum)]
-        return matches[0].df(chrnum)[n].values # there should only be one match
+        if signed:
+            return matches[0].sannot_df(chrnum)[n].values # there should only be one match
+        else:
+            return matches[0].annot_df(chrnum)[n].values # there should only be one match
 
     # assumes that set_pheno_var has already been called
     def draw_beta(self, chrnum):
-        result = self.annotations.values()[0].df(chrnum).copy()
+        result = self.annotations.values()[0].sannot_df(chrnum).copy()
         result = result[['SNP', 'A1', 'A2']]
         result['BETA'] = 0
 
+        mean_effects, var_effects = self.params()
+
         # add variance effects
-        for n, e in self.variance_effects.items():
-            norm_var = e['sigma2'] * self.normalization
+        for n, norm_var in var_effects.items():
             print('size of {} is {}'.format(n, self.sizes[n][0]))
             print('per-SNP variance is', norm_var)
             print('contributing variance of', norm_var * self.sizes[n][0], 'over all chr')
-            esd = EffectSizeDist(e['effectdist'])
+            esd = EffectSizeDist(self.variance_effects[n]['effectdist'])
             v = self.__find_annot(n, chrnum)
             result.ix[np.flatnonzero(v), 'BETA'] += esd.draw_effect_sizes(
                     np.count_nonzero(v), norm_var)
 
         # add mean effects
-        for n, mu in self.mean_effects.items():
-            norm_mu = mu * np.sqrt(self.normalization)
+        for n, norm_mu in mean_effects.items():
             print('norm of {} is {}'.format(n, self.sqnorms[n][0]))
             print('per-SNP mu is', norm_mu)
             print('contributing variance of', norm_mu**2 * self.sqnorms[n][0],

@@ -110,6 +110,9 @@ class Estimator(object):
             print('submission unnecessary for', str(self))
             return
 
+        if not self.dependencies_satisfied(s):
+            print('\nERROR:', str(self), 'cannot submit', s.name, '. It needs preprocessing')
+
         print('\n' + str(self), 'submitting', s.name)
         my_args = ['--method-name', self.method,
                 '--sim-name', s.name,

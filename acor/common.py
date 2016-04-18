@@ -4,7 +4,8 @@ import pandas as pd
 import numpy as np
 import gzip
 from pybedtools import BedTool
-from primitives import Dataset, SnpPartition
+import primitives.dataset as prd
+import primitives.genome as prg
 
 
 def get_ldscores(ldscoresfile):
@@ -56,32 +57,32 @@ def get_annots(annotfilenames):
             np.linalg.norm(annot[annot_names].values, axis=0)**2)
     return annot, annot_names
 
-def mult_by_R_ldblocks(V, refpanel, ld_breakpoints):
-    print('\tloading ld breakpoints')
+def mult_by_R_ldblocks(V, (refpanel, chrnum), ld_breakpoints, mhcpath):
+    print('\tloading ld breakpoints and MHC')
     breakpoints = BedTool(ld_breakpoints)
+    mhc = BedTool(mhcpath)
     print('\tconstructing SNP partition')
-    blocks = SnpPartition(refpanel, breakpoints, remove_mhc=True)
+    blocks = prg.SnpPartition(refpanel.ucscbed(chrnum), breakpoints, mhc)
 
     print('\tdoing multiplication')
     result = np.zeros(V.shape)
     for r in blocks.ranges():
-        print('\tXTXV', r[0], r[1], 'of', refpanel.M)
-        X = refpanel.get_standardized_genotypes(r)
+        print('\tXTXV', r[0], r[1], 'of', refpanel.M(chrnum))
+        X = refpanel.stdX(chrnum, r)
         result[r[0]:r[1],:] = X.T.dot(X.dot(V[r[0]:r[1],:]))
-    return result / refpanel.N
+    return result / refpanel.N()
 
-def convolve(df, cols_to_convolve, refpanel_bfile, ld_breakpoints):
-    print('\treading refpanel', refpanel_bfile)
-    refpanel = Dataset('ref', bfile=refpanel_bfile, reference_genome='hg19')
-    print('\trefpanel contains', refpanel.M, 'SNPs')
+def convolve(df, cols_to_convolve, (refpanel, chrnum), ld_breakpoints, mhcpath):
+    print('\trefpanel contains', refpanel.M(chrnum), 'SNPs')
     print('\tmerging df and refpanel')
-    if len(df) != len(refpanel.bim):
+    if len(df) != len(refpanel.bim_df(chrnum)):
         print('df SNPs and refpanel SNPs must be the same')
         raise Exception()
-    refwithdf = refpanel.bim.merge(df, how='left', on=['SNP'])
+    refwithdf = refpanel.bim_df(chrnum).merge(df, how='left', on=['SNP'])
 
     print('\tconvolving')
-    RV = mult_by_R_ldblocks(refwithdf[cols_to_convolve].values, refpanel, ld_breakpoints)
+    RV = mult_by_R_ldblocks(refwithdf[cols_to_convolve].values, (refpanel, chrnum),
+            ld_breakpoints, mhcpath)
 
     newnames = [n+'.conv1' for n in cols_to_convolve]
     for i, n1 in enumerate(newnames):
@@ -90,15 +91,15 @@ def convolve(df, cols_to_convolve, refpanel_bfile, ld_breakpoints):
     return df, newnames
 
 
-def get_conv(convfilename, annotfilename, refpanel_bfile, ld_breakpoints):
+def get_conv(convfilename, annotfilename, (refpanel, chrnum), ld_breakpoints, mhcpath):
     if not os.path.exists(convfilename):
         print('\tconv file', convfilename, 'not found. creating...')
 
         print('\t\treading annot', annotfilename)
         annot, annot_names = get_annot(annotfilename)
 
-        convolved, newnames = convolve(annot, annot_names, refpanel_bfile, ld_breakpoints)
-        import pdb; pdb.set_trace()
+        convolved, newnames = convolve(annot, annot_names, (refpanel, chrnum),
+                ld_breakpoints, mhcpath)
 
         def save(convolved, newnames, out):
             print('\t\tsaving')
@@ -113,16 +114,17 @@ def get_conv(convfilename, annotfilename, refpanel_bfile, ld_breakpoints):
     conv = pd.read_csv(convfilename, header=0, sep='\t', compression='gzip')
     return conv, conv.columns.values[6:]
 
-def get_convs(convfilenames, annotfilenames, refpanel_bfile, ld_breakpoints):
+def get_convs(convfilenames, annotfilenames, (refpanel, chrnum), ld_breakpoints,
+        mhcpath):
     print('loading conv files', convfilenames)
     if len(convfilenames) != len(annotfilenames):
         raise Exception('\tERROR: the list of annot files and conv files must match')
 
     conv, conv_names = get_conv(convfilenames[0], annotfilenames[0],
-            refpanel_bfile, ld_breakpoints)
+            (refpanel, chrnum), ld_breakpoints, mhcpath)
     for convfilename, annotfilename in zip(convfilenames[1:], annotfilenames[1:]):
         newconv, newconv_names = get_conv(convfilename, annotfilename,
-                refpanel_bfile, ld_breakpoints)
+                (refpanel, chrnum), ld_breakpoints, mhcpath)
         toflip = conv['A1'] == newconv['A2']
         if np.sum(toflip) > 0:
             raise Exception('all conv files must have the same allele coding')
@@ -130,106 +132,3 @@ def get_convs(convfilenames, annotfilenames, refpanel_bfile, ld_breakpoints):
         conv_names += newconv_names
 
     return conv, conv_names
-
-
-
-
-
-
-
-
-
-def results_filename(annot_stems, sumstats_stem, chrnum=None):
-    annot_name = '-'.join([annot_stem.split('/')[-1] for annot_stem in annot_stems])
-    pheno_name = sumstats_stem.split('/')[-1]
-    stem = '/groups/price/yakir/results/2016.03.29_signed/' + \
-            pheno_name + '.' + annot_name
-    if chrnum is None:
-        return stem
-    else:
-        return stem + '.' + str(chrnum)
-
-# def get_annot(args):
-#     print('reading annot files')
-#     annot = None
-#     for annot_stem in args.annot_stems:
-#         print('\t', annot_stem)
-#         if annot is None:
-#             annot = pd.read_csv('{}.{}.annot.gz'.format(annot_stem, args.chrnum),
-#                     header=0, sep='\t', compression='gzip')
-#         else:
-#             newannot = pd.read_csv('{}.{}.annot.gz'.format(annot_stem, args.chrnum),
-#                     header=0, sep='\t', compression='gzip')
-#             newannot_names = newannot.columns[4:].values.tolist()
-#             newannot = newannot[['SNP'] + newannot_names]
-#             annot = annot.merge(newannot, how='left', on='SNP')
-#     annot_names = annot.columns[4:]
-#     print('\tannotation names:', annot_names.values)
-#     print('\tannotations supported on',
-#             np.sum(annot[annot_names].values != 0, axis=0), 'SNPs')
-#     return annot, annot_names
-#
-# def get_refpanel(args):
-#     print('reading refpanel and refpanel bim')
-#     refpanel = Dataset(args.refpanel + '.' + str(args.chrnum))
-#     refpanel_bim = pd.read_csv(refpanel.genotypes_bedfile.filename + '.bim',
-#             sep='\t',
-#             names=['CHR', 'SNP', 'cM', 'BP', 'A1', 'A2'])
-#     refpanel_bim['refpanelINDEX'] = np.arange(len(refpanel_bim))
-#     print('\trefpanel contains', len(refpanel_bim), 'SNPs')
-#     return refpanel, refpanel_bim
-#
-# def merge_files(refpanel_bim, sumstats, annot, annot_names, ldscores=None,
-#         get_full_annot=False):
-#     print('merging files')
-#     print('\tmerging refpanel and sumstats')
-#     data = refpanel_bim.merge(sumstats, how='left', on=['SNP'])
-#     print('\tmerging annot')
-#     data = data.merge(annot, how='left', on=['SNP'])
-#     if get_full_annot:
-#         V = data[annot_names].values
-#
-#     data = data.loc[
-#             data['N'].notnull()]
-#     print('\tnumber of SNPs in common between refpanel and sumstats is', len(data))
-#     print('\tannotations now supported on',
-#             np.sum(data[annot_names].values != 0, axis=0), 'SNPs')
-#
-#     if ldscores is not None:
-#         print('\tmerging ldscores')
-#         data = data.merge(ldscores, how='left', on=['SNP'])
-#
-#     print('\tflipping sumstats to line up with refpanel')
-#     flip = data['A1_x'] == data['A2_y']
-#     data.ix[flip, 'Z'] *= -1
-#
-#     print('\tcreating numpy arrays')
-#     N = np.min(data['N'].values)
-#     alphahat = data['Z'].values / np.sqrt(data['N'].values)
-#     l2_ss = None if ldscores is None else data['L2'].values
-#     if not get_full_annot:
-#         V = data[annot_names].values
-#     refpanel_indices = data['refpanelINDEX'].values
-#     print('\tN=', N, 'alphahat.shape=', alphahat.shape, 'V.shape=', V.shape,
-#             'refpanel_indices.shape=', refpanel_indices.shape)
-#
-#     return N, alphahat, V, refpanel_indices, l2_ss
-#
-# def mult_by_R_ldblocks(V, refpanel, refpanel_indices=None):
-#     breakpoints = BedTool(paths.reference + 'pickrell_breakpoints.hg19.eur.bed')
-#     blocks = SnpPartition(refpanel, breakpoints, remove_mhc=True)
-#
-#     if refpanel_indices is not None:
-#         Vwithzeros = np.zeros((refpanel.M, V.shape[1]))
-#         Vwithzeros[refpanel_indices] = V
-#     else:
-#         Vwithzeros = V
-#     result = np.zeros(Vwithzeros.shape)
-#     for r in blocks.ranges():
-#         print('\tXTXV', r[0], r[1], 'of', refpanel.M)
-#         X = refpanel.get_standardized_genotypes(r)
-#         result[r[0]:r[1],:] = X.T.dot(X.dot(Vwithzeros[r[0]:r[1],:]))
-#     if refpanel_indices is not None:
-#         return result[refpanel_indices] / refpanel.N
-#     else:
-#         return result / refpanel.N

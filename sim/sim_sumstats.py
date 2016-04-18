@@ -13,22 +13,23 @@ def create_beta_and_profiles(s, beta_num):
         # create beta, normalize by maf since genotypes will be centered but not standardized
         print('creating beta for chr', chrnum)
         beta = s.architecture.draw_beta(chrnum)
-        maf = s.dataset.frq_df(chrnum)['MAF'].values
-        beta['BETA'] /= np.sqrt(maf * (1-maf))
         beta.to_csv(s.beta_file(beta_num, chrnum, mode='w'), index=False, sep='\t')
+        maf = s.dataset.frq_df(chrnum)['MAF'].values
+        beta['BETA'] /= np.sqrt(2 * maf * (1-maf))
 
         # write sparse beta as well (plink works faster if beta is explicitly sparse)
         sparsebeta = beta.loc[beta['BETA'] != 0]
         sparsebeta.to_csv(s.sparsebeta_file(beta_num,chrnum,mode='w'),
                 index=False, sep='\t')
-        print('norm of beta{}*sqrt(maf(1-maf)) equals {}'.format(
-            chrnum, np.linalg.norm(beta['BETA'] * np.sqrt(maf * (1-maf)))**2))
+        print('norm of beta{}*sqrt(2maf(1-maf)) equals {}'.format(
+            chrnum, np.linalg.norm(beta['BETA'] * np.sqrt(2*maf * (1-maf)))**2))
         print('beta{} is length {} and has support of size {}'.format(
             chrnum, len(beta), len(sparsebeta)))
 
         # call plink to create profile file
         cmd = ['plink',
                 '--bfile', s.dataset.bfile(chrnum),
+                '--allow-no-sex',
                 '--score', s.sparsebeta_filename(beta_num, chrnum), '1', '2', '4',
                 'sum',
                 'center',
@@ -87,6 +88,7 @@ def make_sumstats(s, beta_num):
     print('merging chromosomes of sumstats')
     sumstats = pd.DataFrame()
     for chrnum in s.chromosomes:
+        print(chrnum)
         qassoc = pd.read_csv(s.sumstatschr_filename(beta_num, chrnum),
             header=0,
             delim_whitespace=True)
@@ -105,6 +107,7 @@ def make_sumstats(s, beta_num):
     sumstats.drop(['BETA', 'P', 'SIGN', 'CHISQ', 'NMISS'], axis=1, inplace=True)
 
     # save the big sumstats file
+    print('saving result to', s.sumstats_filename(beta_num))
     sumstats.to_csv(s.sumstats_file(beta_num, mode='w'), sep='\t', index=False)
 
 def main(args):

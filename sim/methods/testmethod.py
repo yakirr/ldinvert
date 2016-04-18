@@ -3,6 +3,7 @@ import argparse
 import pandas as pd
 from estimator import Estimator
 import primitives.annotation as pa
+import paths
 
 
 class TestMethodTypeA(Estimator):
@@ -17,7 +18,7 @@ class TestMethodTypeA(Estimator):
                 self.params.myparam)
 
     def required_files(self, s):
-        a = pa.Annotation(self.params.sannot_chr)
+        a = pa.Annotation(paths.annotations + self.params.sannot_chr)
         return [a.filestem(c)+'.testprocess' for c in s.chromosomes]
 
     def preprocess(self, s):

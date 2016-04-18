@@ -1,47 +1,57 @@
 from __future__ import print_function, division
+import os
 import numpy as np
 import pandas as pd
 from pyutils import memo
-import paths
 
 class Annotation(object):
-    def __init__(self, name, path=paths.annotations, signed=True):
-        self.stem = path+name
+    def __init__(self, stem_chr, signed=True):
+        self.stem_chr = stem_chr
         self.signed = signed
 
-    @property
-    def start_colindex(self):
-        return 6 if self.signed else 4
-
     def filestem(self, chrnum=''):
-        return '{}{}'.format(self.stem, chrnum)
-    def filename(self, chrnum):
-        if self.signed:
-            return self.filestem(chrnum) + '.sannot.gz'
-        else:
-            return self.filestem(chrnum) + '.annot.gz'
+        return '{}{}'.format(self.stem_chr, chrnum)
+    def annot_filename(self, chrnum):
+        return self.filestem(chrnum) + '.annot.gz'
+    def sannot_filename(self, chrnum):
+        return self.filestem(chrnum) + '.sannot.gz'
     def sqnorm_filename(self, chrnum):
         return self.filestem(chrnum) + '.sqnorm'
     def size_filename(self, chrnum):
         return self.filestem(chrnum) + '.M'
+    def ldscores_filename(self, chrnum):
+        return self.filestem(chrnum) + '.l2.ldscore.gz'
+    def conv_filename(self, chrnum):
+        return self.filestem(chrnum) + '.conv.gz'
 
     @memo.memoized
-    def df(self, chrnum):
-        return pd.read_csv(self.filename(chrnum),
+    def annot_df(self, chrnum):
+        return pd.read_csv(self.annot_filename(chrnum),
                 compression='gzip', header=0, sep='\t')
-
-    def names(self, chrnum):
-        return self.df(chrnum).columns.values[self.start_colindex :]
-
-    def num_snps(self, chrnum):
-        return len(self.df(chrnum))
-
+    def sannot_df(self, chrnum):
+        return pd.read_csv(self.sannot_filename(chrnum),
+                compression='gzip', header=0, sep='\t')
     @memo.memoized
     def sqnorms(self, chrnum):
         return pd.read_csv(self.sqnorm_filename(chrnum), names=self.names(chrnum), sep='\t')
     @memo.memoized
     def sizes(self, chrnum):
         return pd.read_csv(self.size_filename(chrnum), names=self.names(chrnum), sep='\t')
+
+    @memo.memoized
+    def names(self, chrnum):
+        if os.path.exists(self.annot_filename(chrnum)):
+            return self.annot_df(chrnum).columns.values[4:]
+        else: # assuming sannot exists
+            return self.sannot_df(chrnum).columns.values[6:]
+
+    @memo.memoized
+    def num_snps(self, chrnum):
+        if os.path.exists(self.annot_filename(chrnum)):
+            return len(self.annot_df(chrnum))
+        else: # assuming sannot exists
+            return len(self.sannot_df(chrnum))
+
     def total_sqnorms(self, chromosomes):
         return sum([self.sqnorms(c) for c in chromosomes])
     def total_sizes(self, chromosomes):
@@ -49,9 +59,9 @@ class Annotation(object):
 
 
 if __name__ == '__main__':
-    a = Annotation('1000G3.wim5u/mock/')
+    a = Annotation('/groups/price/yakir/data/annot/1000G3.wim5u/mock/')
     print(a.names(22))
-    print(a.df(22))
+    print(a.sannot_df(22))
     print(a.sqnorms(22))
     print(a.sizes(22))
     print(a.total_sqnorms([1,22]))

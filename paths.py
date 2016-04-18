@@ -8,7 +8,7 @@ data = '/groups/price/yakir/data/'
 metadata = '/groups/price/yakir/metadata/'
 reference = data + 'reference/'
 genome_subsets = data + 'genome_subsets/'
-annotations = data + 'signed_annot/'
+annotations = data + 'annot/'
 simsumstats = data + 'simsumstats/'
 
 results = '/groups/price/yakir/results/'

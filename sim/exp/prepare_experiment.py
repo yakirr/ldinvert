@@ -14,6 +14,10 @@ if __name__ == '__main__':
     print('loading experiment', args.exp_name)
     exp = Experiment(args.exp_name)
 
+    print('preparing results directory')
+    with open(exp.purpose_filename, 'w') as outfile:
+        outfile.write(exp.purpose)
+
     print('submitting preprocessing')
     for s in exp.simulations:
         for e in exp.estimators_and_truth():

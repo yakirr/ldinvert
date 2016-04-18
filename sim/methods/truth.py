@@ -76,12 +76,6 @@ class TruthFE(Estimator):
         print(' '.join(cmd))
         subprocess.call(cmd)
 
-    def required_files(self, s):
-        return []
-
-    def preprocess(self, s):
-        print('nothing to pre-process')
-
     def run(self, s, beta_num):
         print('TruthFRE is running', s.name, 'on beta', beta_num,
                 'with refpanel=', self.params.refpanel)

@@ -1,6 +1,6 @@
 from __future__ import print_function, division
-import numpy as np
-import pickle, argparse
+import pandas as pd
+import argparse
 import matplotlib.pyplot as plt
 from experiment import Experiment
 
@@ -49,25 +49,23 @@ def create_plot(exp, s, error_lists, pretty=False):
     print('saving with standardized axes')
     fig.savefig(exp.plot_filename(s) + '.axes.png', dpi=300)
 
-def write_results(exp, s, result_lists, truth_lists, error_lists):
-    for e in exp.estimators:
-        with open(exp.resultstsv_filename(s, e), 'w') as f:
-            print('beta\ttruth\tresult\terror', file=f)
-            for beta in range(1, s.num_betas+1):
-                for t,r,err in zip(truth_lists[e][beta-1], result_lists[e][beta-1], error_lists[e][beta-1]):
-                    print(beta, t, r, err, sep='\t', file=f)
+def write_results(exp, s, all_results):
+    def filename(est):
+        return '{}{}.{}.biases.tsv'.format(exp.results_folder(), s.name, est.fsid())
 
+    for est in exp.estimators:
+        all_results[est].to_csv(filename(est), sep='\t', index=False)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--exp_name', type=str, required=True,
+    parser.add_argument('--exp-name',
             help='the name of the json experiment file whose results we wish to plot')
     parser.add_argument('-pretty', action='store_true', default=False,
             help='print short pretty names for methods and leave out mse\'s')
     args = parser.parse_args()
 
     print('loading experiment', args.exp_name)
-    exp = Experiment(args.exp_name)
+    exp = see.Experiment(args.exp_name)
 
     if not args.pretty:
         plt.rcParams.update({'axes.titlesize': 'medium'})
@@ -80,32 +78,15 @@ if __name__ == '__main__':
     def plot_results_for(s):
         true_results = exp.truth.results(s)
         true_results.rename(columns={'ESTIMATE':'TRUTH'}, inplace=True)
-        true_results.drop(column=['P','STDERR'], axis=1, inplace=True)
+        true_results.drop(['P','STDERR'], axis=1, inplace=True)
+        all_results = {}
         for est in exp.estimators:
-            results = e.results(s)
+            results = est.results(s)
             merged = pd.merge(results, true_results, how='inner', on='BETA_NUM')
-
-
-
-
-            my_errors = np.empty((s.num_betas,s.num_samples_per_beta))
-            my_results = np.empty((s.num_betas,s.num_samples_per_beta))
-            my_truths = np.empty((s.num_betas,s.num_samples_per_beta))
-            for beta in range(1, s.num_betas+1):
-                try:
-                    my_truths[beta-1] = exp.truth.results(beta, s)
-                    my_results[beta-1] = e.results(beta, s)
-                    my_errors[beta-1] = my_results[beta-1] - my_truths[beta-1]
-                except:
-                    print('warning: couldnt find results for', exp, e, beta)
-                    continue
-
-            error_lists[e] = my_errors
-            result_lists[e] = my_results
-            truth_lists[e] = my_truths
-        create_plot(exp, s, error_lists, pretty=args.pretty)
-        write_results(exp, s, result_lists, truth_lists, error_lists)
-        with open(exp.purpose_filename(), 'w') as outfile:
-            outfile.write(exp.purpose)
+            merged['BIAS'] = merged['ESTIMATE'] - merged['TRUTH']
+            merged = merged[['BETA_NUM', 'ESTIMATE', 'TRUTH', 'BIAS']]
+            all_results[est] = merged
+        # create_plot(exp, s, all_results, pretty=args.pretty)
+        write_results(exp, s, all_results)
     map(plot_results_for, exp.simulations)
 

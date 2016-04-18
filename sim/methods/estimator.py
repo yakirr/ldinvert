@@ -153,6 +153,7 @@ class Estimator(object):
         return pd.read_csv(self.result_filename(s, beta_num),
                 delim_whitespace=True,  header=0)
     def results(self, s):
+        #TODO: add code for automatically skipping results that weren't found?
         if not os.path.exists(self.results_filename(s)):
             print('aggregate result file not found. creating...')
             result_arrays = [

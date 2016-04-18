@@ -55,9 +55,11 @@ class Experiment(object):
     #     return self.results_folder() + s.readable_name() + '.' + \
     #             est.readable_name() + '.results.tsv'
 
-    # def purpose_filename(self):
-    #     return self.results_folder() + 'purpose.txt'
+    @property
+    def purpose_filename(self):
+        return self.results_folder() + 'purpose.txt'
 
+    @property
     def estimators_and_truth(self):
         return itertools.chain(self.estimators, [self.truth])
 

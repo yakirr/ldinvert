@@ -87,4 +87,7 @@ if __name__ == '__main__':
     # est = TruthRE(refpanel='1000G3.wim5u', coeff='ANNOT', output='total')
     est = TruthFE(refpanel='1000G3.wim5u', coeff='ANNOT', annot_chr='1000G3.wim5u/mock/')
     s = sm.Simulation('smalltest')
-    print(est.run(s, 1))
+    # print(est.run(s, 1))
+
+    print(est.results(s))
+

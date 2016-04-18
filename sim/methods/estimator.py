@@ -1,5 +1,6 @@
 from __future__ import print_function, division
 import abc
+import pandas as pd
 import numpy as np
 import math
 import argparse
@@ -93,8 +94,10 @@ class Estimator(object):
     def preprocess(self, s): pass
 
     # Running code
-    def results_file(self, s, beta_num):
+    def result_filename(self, s, beta_num):
         return s.beta_folder(beta_num, create=False) + 'results.' + self.fsid()
+    def results_filename(self, s):
+        return s.root_folder() + 'results.' + self.fsid()
 
     def submit_runs(self, s, overwrite=False, debug=False):
         def outfile_path(batch_num):
@@ -105,7 +108,7 @@ class Estimator(object):
             return 'run-{}-{}[1-{}]'.format(
                 self.fsid(), s.name, self.num_batches(s))
 
-        if all(os.path.exists(self.results_file(s, beta_num))
+        if all(os.path.exists(self.result_filename(s, beta_num))
             for beta_num in range(1, s.num_betas+1)) and not overwrite:
             print('submission unnecessary for', str(self))
             return
@@ -143,10 +146,22 @@ class Estimator(object):
         for beta_num in self.betas_in_batch(s, batch_num):
             print('===beta_num', beta_num, '====')
             results = self.run(s, beta_num)
-            results.to_csv(self.results_file(s, beta_num),
+            results.to_csv(self.result_filename(s, beta_num),
                     sep='\t', index=False)
 
-    # def results(self, beta_num, sim):
-    #     return np.loadtxt(self.results_path_stem(sim, beta_num))
-    # def variances(self, beta_num, sim):
-    #     return np.loadtxt(self.variances_path_stem(sim, beta_num))
+    def result(self, s, beta_num):
+        return pd.read_csv(self.result_filename(s, beta_num),
+                delim_whitespace=True,  header=0)
+    def results(self, s):
+        if not os.path.exists(self.results_filename(s)):
+            print('aggregate result file not found. creating...')
+            result_arrays = [
+                    map(float, open(self.result_filename(s, beta_num)).readlines()[1].split())
+                    for beta_num in range(1, s.num_betas+1)]
+            header = pd.read_csv(self.result_filename(s, 1),
+                    delim_whitespace=True, header=0).columns
+            df = pd.DataFrame(columns=header, data=result_arrays)
+            df['BETA_NUM'] = range(1, s.num_betas+1)
+            df.to_csv(self.results_filename(s), sep='\t', index=False)
+            print('done')
+        return pd.read_csv(self.results_filename(s), delim_whitespace=True, header=0)

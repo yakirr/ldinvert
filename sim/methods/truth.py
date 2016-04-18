@@ -3,6 +3,7 @@ import argparse
 import pandas as pd
 from estimator import Estimator
 import primitives.annotation as pa
+from pyutils import memo
 import paths
 import numpy as np
 import pandas as pd
@@ -48,9 +49,32 @@ class TruthFE(Estimator):
     parser.add_argument('--annot_chr', type=str, required=True,
             help='path to annotgz files, not incl chromosome number and extension')
 
+    @property
+    @memo.memoized
+    def annotation(self):
+        return pa.Annotation(paths.annotations + self.params.annot_chr)
+
     def fsid(self):
         return 'truthFE-{}'.format(
                 self.params.coeff)
+
+    def required_files(self, s):
+        return [self.annotation.conv_filename(c) for c in s.chromosomes]
+
+    def preprocess(self, s):
+        print('Acor is preprocessing', s.name,
+                'with refpanel=', self.params.refpanel)
+        print(self.params)
+
+        print('preprocessing', self.annotation.filestem())
+        cmd = [
+                'python', '-u', paths.code + 'acor/acor.py',
+                '--annot-chr', self.annotation.stem_chr,
+                '--bfile-chr', self.refpanel.bfile_chr,
+                'conv',
+                '--chroms', ' '.join(str(c) for c in s.chromosomes)]
+        print(' '.join(cmd))
+        subprocess.call(cmd)
 
     def required_files(self, s):
         return []
@@ -62,18 +86,17 @@ class TruthFE(Estimator):
         print('TruthFRE is running', s.name, 'on beta', beta_num,
                 'with refpanel=', self.params.refpanel)
         print(self.params)
-        a = pa.Annotation(paths.annotations + self.params.annot_chr)
 
         beta = pd.concat(
             [pd.read_csv(s.beta_file(beta_num, chrom), sep = "\t")
                 for chrom in s.chromosomes],
             axis = 0)['BETA']
         Rv = pd.concat(
-            [pd.read_csv(a.conv_filename(chrom), sep = "\t")
+            [pd.read_csv(self.annotation.conv_filename(chrom), sep = "\t")
                 for chrom in s.chromosomes],
             axis = 0)[self.params.coeff + '.conv1']
         v = pd.concat(
-            [a.sannot_df(chrom)
+            [self.annotation.sannot_df(chrom)
                 for chrom in s.chromosomes],
             axis = 0)[self.params.coeff]
         result = np.dot(beta, Rv) / np.dot(v, Rv)

@@ -41,22 +41,19 @@ class Architecture(object):
         self.sqnorms = pd.DataFrame()
         self.sizes = pd.DataFrame()
         for a in self.annotations.values():
+            print('loading size/norm info on', a.stem_chr)
             if a.names(chroms[0]) in self.sqnorms.columns.values:
                 print('WARNING: duplicate annotation column names!')
             self.sqnorms[a.names(chroms[0])] = a.total_sqnorms(chroms)
             self.sizes[a.names(chroms[0])] = a.total_sizes(chroms)
-
-        total_variance = np.sum([
-                self.sqnorms[n][0] * mu**2 for n, mu in self.mean_effects.items()]) + \
-            np.sum([
-                self.sizes[n][0] * e['sigma2'] for n, e in self.variance_effects.items()])
-        self.normalization = h2g / total_variance
+        print('done')
+        self.h2g = h2g
 
     # returns a tuple consisting of a dict of mean effects and a dict of variance effects
     def params(self):
-        return ({ n: mu * np.sqrt(self.normalization)
-                for n, mu in self.mean_effects.items()},
-            { n: e['sigma2'] * self.normalization
+        return ({ n: np.sqrt(e['h2g_explained']/self.sqnorms[n][0] * self.h2g) * e['sign']
+                for n, e in self.mean_effects.items()},
+            { n: e['h2g_explained'] / self.sizes[n][0] * self.h2g
                 for n,e in self.variance_effects.items()})
 
 
@@ -102,7 +99,7 @@ if __name__ == '__main__':
     print(esd.draw_effect_sizes(100, 100))
     print()
 
-    a = Architecture('test')
+    a = Architecture('mock_null_varenriched')
     a.set_pheno_var(0.5, [1, 22])
     beta = a.draw_beta(22)
-    print(beta)
+    print(beta.columns)

@@ -19,8 +19,13 @@ class Simulation(object):
         self.__dict__.update(
                 json.load(open(path+name+'.json')))
         self.dataset = Dataset(self.dataset)
-        self.architecture = Architecture(self.architecture)
-        self.architecture.set_pheno_var(self.h2g, self.chromosomes)
+
+    @property
+    @memo.memoized
+    def architecture(self):
+        self.__architecture = Architecture(self.architecture_name)
+        self.__architecture.set_pheno_var(self.h2g, self.chromosomes)
+        return self.__architecture
 
     def root_folder(self, create=True):
         folder = '{}{}/{}/'.format(paths.simsumstats,
@@ -65,3 +70,6 @@ if __name__ == '__main__':
     print(d.path)
     print(d.bfile_chr)
     print(d.bfile(22))
+
+    s = Simulation('smalltest')
+    print(s.architecture)

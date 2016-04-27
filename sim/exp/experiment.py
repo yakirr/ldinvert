@@ -67,5 +67,5 @@ if __name__ == '__main__':
     exp = Experiment('2016.04.13.1_testmethod')
 
     for s in exp.simulations:
-        for e in exp.estimators_and_truth():
+        for e in exp.estimators_and_truth:
             print(str(e), str(s.name))

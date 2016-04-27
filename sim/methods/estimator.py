@@ -86,7 +86,8 @@ class Estimator(object):
                 jobname='preprocess-' + self.fsid() + '-' + s.name,
                 memory_GB=self.preprocess_memoryreq_GB,
                 debug=debug)
-            self.declare_preprocess_submitted(s)
+            if not debug:
+                self.declare_preprocess_submitted(s)
         else:
             print(str(self), ': pre-processing unnecessary')
 
@@ -98,6 +99,10 @@ class Estimator(object):
         return s.beta_folder(beta_num, create=False) + 'results.' + self.fsid()
     def results_filename(self, s):
         return s.root_folder() + 'results.' + self.fsid()
+    def missing_results(self, s):
+        return [self.result_filename(s, beta_num)
+                for beta_num in range(1, s.num_betas+1)
+                if not os.path.exists(self.result_filename(s, beta_num))]
 
     def submit_runs(self, s, overwrite=False, debug=False):
         def outfile_path(batch_num):
@@ -108,13 +113,12 @@ class Estimator(object):
             return 'run-{}-{}[1-{}]'.format(
                 self.fsid(), s.name, self.num_batches(s))
 
-        if all(os.path.exists(self.result_filename(s, beta_num))
-            for beta_num in range(1, s.num_betas+1)) and not overwrite:
-            print('submission unnecessary for', str(self))
+        if not self.missing_results(s):
+            print('submission unnecessary for', str(self), 'on', s.name)
             return
-
         if not self.dependencies_satisfied(s):
             print('\nERROR:', str(self), 'cannot submit', s.name, '. It needs preprocessing')
+            return
 
         print('\n' + str(self), 'submitting', s.name)
         my_args = ['--method-name', self.method,
@@ -127,14 +131,14 @@ class Estimator(object):
                 ['python', '-u', paths.code + 'sim/methods/estimator_manager.py'] + my_args,
                 outfilepath,
                 jobname=run_job_name(),
-                memory_GB=4,
+                memory_GB=8,
                 debug=debug)
 
     @abc.abstractmethod
     def run(self, s, beta_num): pass
 
     def num_batches(self, s):
-        return min(10, s.num_betas)
+        return min(25, s.num_betas)
     def batch_size(self, s):
         return int(math.ceil(s.num_betas / self.num_batches(s)))
     # batch_num and beta_nums are 1-indexed to comply with LSF job indices
@@ -156,9 +160,16 @@ class Estimator(object):
         #TODO: add code for automatically skipping results that weren't found?
         if not os.path.exists(self.results_filename(s)):
             print('aggregate result file not found. creating...')
-            result_arrays = [
+            print(self.fsid(), s.name)
+            try:
+                result_arrays = [
                     map(float, open(self.result_filename(s, beta_num)).readlines()[1].split())
-                    for beta_num in range(1, s.num_betas+1)]
+                        for beta_num in range(1, s.num_betas+1)]
+            except:
+                print('ERROR PARSING')
+                print([open(self.result_filename(s, beta_num)).readlines()[1].split()
+                    for beta_num in range(1, s.num_betas+1)])
+                exit()
             header = pd.read_csv(self.result_filename(s, 1),
                     delim_whitespace=True, header=0).columns
             df = pd.DataFrame(columns=header, data=result_arrays)

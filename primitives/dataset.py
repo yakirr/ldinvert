@@ -12,13 +12,15 @@ class Dataset(object):
 
     @property
     def path(self):
-        return os.path.dirname(self.bfile_chr)
+        return os.path.dirname(self.bfile_chr) + '/'
 
     @memo.memoized
     def data(self, chrnum):
         return Bed(self.bfile(chrnum))
     def stdX(self, chrnum, r):
-        genotypes = self.data(chrnum)[:, r[0]:r[1]].read()
+        return self.stdX_it(chrnum, range(r[0],r[1]))
+    def stdX_it(self, chrnum, it):
+        genotypes = self.data(chrnum)[:, it].read()
         genotypes.standardize(); genotypes.standardize()
         return genotypes.val
 

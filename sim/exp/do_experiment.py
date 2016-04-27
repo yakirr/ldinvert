@@ -19,5 +19,5 @@ if __name__ == '__main__':
 
     print('submitting runs')
     for s in exp.simulations:
-        for e in exp.estimators_and_truth():
+        for e in exp.estimators_and_truth:
             e.submit_runs(s, overwrite=args.overwrite, debug=args.debug)

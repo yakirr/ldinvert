@@ -87,15 +87,15 @@ class LDSC(Estimator):
                 '--print-coefficients',
                 '--chisq-max', '999999',
                 '--frqfile-chr', self.refpanel.bfile_chr,
-                '--out', self.results_file(s, beta_num)] + extra_args
+                '--out', self.result_filename(s, beta_num)] + extra_args
         print(' '.join(cmd))
         subprocess.call(cmd)
 
-        ldscresults = pd.read_csv(self.results_file(s, beta_num)+'.results',
+        ldscresults = pd.read_csv(self.result_filename(s, beta_num)+'.results',
                 delim_whitespace=True,
                 header=0)
         rowindex = np.where(np.concatenate([
-            list(a.names(22)) for a in annots]) == self.params.coeff)[0]
+            a.names(22) for a in annots]) == self.params.coeff)[0][0]
         estimate = ldscresults['Prop._h2'][rowindex]
         stderr = ldscresults['Prop._h2_std_error'][rowindex]
         pval = ldscresults['Enrichment_p'][rowindex]

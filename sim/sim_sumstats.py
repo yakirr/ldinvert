@@ -86,7 +86,7 @@ def make_qassoc(s, beta_num):
 def make_sumstats(s, beta_num):
     # create one large df from the qassoc files.
     print('merging chromosomes of sumstats')
-    sumstats = pd.DataFrame()
+    sumstats = []
     for chrnum in s.chromosomes:
         print(chrnum)
         qassoc = pd.read_csv(s.sumstatschr_filename(beta_num, chrnum),
@@ -94,17 +94,18 @@ def make_sumstats(s, beta_num):
             delim_whitespace=True)
         qassoc['A1'] = s.dataset.bim_df(chrnum)['A1']
         qassoc['A2'] = s.dataset.bim_df(chrnum)['A2']
-        sumstats = sumstats.append(qassoc[['SNP', 'A1', 'A2', 'BETA', 'P', 'NMISS']])
+        sumstats.append(qassoc[['SNP', 'A1', 'A2', 'T', 'NMISS']])
+    sumstats = pd.concat(sumstats, axis=0)
 
-    # turn the association statistics into Z scores and match sumstats format
-    print('adding sign')
-    sumstats['SIGN'] = np.sign(sumstats['BETA'])
-    print('computing chisq statistics')
-    sumstats['CHISQ'] = stats.chi2.isf(sumstats['P'], 1)
-    print('computing z scores')
-    sumstats['Z'] = np.sqrt(sumstats['CHISQ']) * sumstats['SIGN']
-    sumstats['N'] = sumstats['NMISS']
-    sumstats.drop(['BETA', 'P', 'SIGN', 'CHISQ', 'NMISS'], axis=1, inplace=True)
+    # since sample size is large, we assume that the T statistic and the Z score are
+    # approximately equal.
+    sumstats.rename(columns={'T':'Z', 'NMISS':'N'}, inplace=True)
+
+    if np.sum(np.isnan(sumstats['Z'])) > 0 or np.sum(np.isinf(sumstats['Z'])) > 0:
+        print('ERROR: some summary statistics were either inf or nan. aborting')
+        print(np.where(np.isnan(sumstats['Z']))[0])
+        print(np.where(np.isinf(sumstats['Z']))[0])
+        return
 
     # save the big sumstats file
     print('saving result to', s.sumstats_filename(beta_num))

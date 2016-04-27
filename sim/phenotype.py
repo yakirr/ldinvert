@@ -2,6 +2,7 @@ from __future__ import print_function, division
 import numpy as np
 import pandas as pd
 import json
+from collections import defaultdict
 from primitives.annotation import Annotation
 import paths
 
@@ -51,10 +52,12 @@ class Architecture(object):
 
     # returns a tuple consisting of a dict of mean effects and a dict of variance effects
     def params(self):
-        return ({ n: np.sqrt(e['h2g_explained']/self.sqnorms[n][0] * self.h2g) * e['sign']
-                for n, e in self.mean_effects.items()},
+        return (defaultdict(float,
+            { n: np.sqrt(e['h2g_explained']/self.sqnorms[n][0] * self.h2g) * e['sign']
+                for n, e in self.mean_effects.items()}),
+            defaultdict(float,
             { n: e['h2g_explained'] / self.sizes[n][0] * self.h2g
-                for n,e in self.variance_effects.items()})
+                for n,e in self.variance_effects.items()}))
 
 
     def __find_annot(self, n, chrnum, signed=True):

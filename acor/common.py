@@ -4,8 +4,10 @@ import pandas as pd
 import numpy as np
 import gzip
 from pybedtools import BedTool
+from pyutils import iter as it
 import primitives.dataset as prd
 import primitives.genome as prg
+import primitives.annotation as pa
 
 
 def get_ldscores(ldscoresfile):
@@ -14,12 +16,11 @@ def get_ldscores(ldscoresfile):
 
 def get_ldscores_allchr(ldscoresfile_chr, chromosomes):
     print('reading ldscores')
-    ldscores = pd.DataFrame()
+    ldscores = []
     for chrnum in chromosomes:
         print('\t', chrnum)
-        myldscores = get_ldscores(ldscoresfile_chr + str(chrnum) + '.l2.ldscore.gz')
-        ldscores = ldscores.append(myldscores)
-    return ldscores
+        ldscores.append(get_ldscores(ldscoresfile_chr + str(chrnum) + '.l2.ldscore.gz'))
+    return pd.concat(ldscores).reset_index(drop=True)
 
 def get_sumstats(sumstatsfile):
     print('reading sumstats and filtering by sample size')
@@ -57,6 +58,9 @@ def get_annots(annotfilenames):
             np.linalg.norm(annot[annot_names].values, axis=0)**2)
     return annot, annot_names
 
+# TODO: in the two functions below, it needs to be the case that singletons contribute
+# a single 1 along the diagonal of R. As currently implemented, they contribute 0
+# NB: in real life, the refpanel won't have singletons so this may not be an issue
 def mult_by_R_ldblocks(V, (refpanel, chrnum), ld_breakpoints, mhcpath):
     print('\tloading ld breakpoints and MHC')
     breakpoints = BedTool(ld_breakpoints)
@@ -66,13 +70,56 @@ def mult_by_R_ldblocks(V, (refpanel, chrnum), ld_breakpoints, mhcpath):
 
     print('\tdoing multiplication')
     result = np.zeros(V.shape)
-    for r in blocks.ranges():
-        print('\tXTXV', r[0], r[1], 'of', refpanel.M(chrnum))
+    for r in it.show_progress(blocks.ranges()):
+        # print('\tXTXV', r[0], r[1], 'of', refpanel.M(chrnum))
         X = refpanel.stdX(chrnum, r)
         result[r[0]:r[1],:] = X.T.dot(X.dot(V[r[0]:r[1],:]))
     return result / refpanel.N()
 
-def convolve(df, cols_to_convolve, (refpanel, chrnum), ld_breakpoints, mhcpath):
+def mult_by_R_noldblocks(V, (refpanel, chrnum)):
+    r = 0
+    XV = 0
+    while r < refpanel.M(chrnum):
+        s = (r, min(r+1000, refpanel.M(chrnum)))
+        print(s, 'of', refpanel.M(chrnum))
+        X = refpanel.stdX(chrnum, s)
+        XV += X.dot(V[s[0]:s[1]])
+        r += 1000
+    r = 0
+    XTXV = np.zeros(V.shape)
+    while r < refpanel.M(chrnum):
+        s = (r, min(r+1000, refpanel.M(chrnum)))
+        print(s, 'of', refpanel.M(chrnum))
+        X = refpanel.stdX(chrnum, s)
+        XTXV[s[0]:s[1]] = X.T.dot(XV)
+        r += 1000
+    return XTXV / refpanel.N()
+
+def mult_by_R_cmwindow(V, (refpanel, chrnum)):
+    pass
+
+def sparse_QF(v1, v2, (refpanel, chrnum)):
+    v1 = v1.reshape((-1,))
+    v2 = v2.reshape((-1,))
+    nz1 = np.nonzero(v1)[0]
+    nz2 = np.nonzero(v2)[0]
+    ind = np.sort(np.unique(np.concatenate([nz1, nz2])))
+
+    r = 0
+    Xv1 = 0
+    Xv2 = 0
+    while r < len(ind):
+        s = (r, min(r+500, len(ind)))
+        print(s, 'of', len(ind))
+        X = refpanel.stdX_it(chrnum, ind[s[0]:s[1]])
+        print('done reading')
+        Xv1 += X.dot(v1[ind[s[0]:s[1]]])
+        Xv2 += X.dot(v2[ind[s[0]:s[1]]])
+        r += 500
+    return Xv1.dot(Xv2)/refpanel.N()
+
+def convolve(df, cols_to_convolve, (refpanel, chrnum), ld_breakpoints, mhcpath,
+        fullconv=False):
     print('\trefpanel contains', refpanel.M(chrnum), 'SNPs')
     print('\tmerging df and refpanel')
     if len(df) != len(refpanel.bim_df(chrnum)):
@@ -81,8 +128,11 @@ def convolve(df, cols_to_convolve, (refpanel, chrnum), ld_breakpoints, mhcpath):
     refwithdf = refpanel.bim_df(chrnum).merge(df, how='left', on=['SNP'])
 
     print('\tconvolving')
-    RV = mult_by_R_ldblocks(refwithdf[cols_to_convolve].values, (refpanel, chrnum),
-            ld_breakpoints, mhcpath)
+    if fullconv:
+        RV = mult_by_R_noldblocks(refwithdf[cols_to_convolve].values, (refpanel, chrnum))
+    else:
+        RV = mult_by_R_ldblocks(refwithdf[cols_to_convolve].values, (refpanel, chrnum),
+                ld_breakpoints, mhcpath)
 
     newnames = [n+'.conv1' for n in cols_to_convolve]
     for i, n1 in enumerate(newnames):
@@ -99,7 +149,7 @@ def get_conv(convfilename, annotfilename, (refpanel, chrnum), ld_breakpoints, mh
         annot, annot_names = get_annot(annotfilename)
 
         convolved, newnames = convolve(annot, annot_names, (refpanel, chrnum),
-                ld_breakpoints, mhcpath)
+                ld_breakpoints, mhcpath, fullconv=pa.Annotation.isfullconv(convfilename))
 
         def save(convolved, newnames, out):
             print('\t\tsaving')

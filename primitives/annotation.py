@@ -21,8 +21,14 @@ class Annotation(object):
         return self.filestem(chrnum) + '.M'
     def ldscores_filename(self, chrnum):
         return self.filestem(chrnum) + '.l2.ldscore.gz'
-    def conv_filename(self, chrnum):
-        return self.filestem(chrnum) + '.conv.gz'
+    def conv_filename(self, chrnum, full=False):
+        if not full:
+            return self.filestem(chrnum) + '.conv.gz'
+        else:
+            return self.filestem(chrnum) + '.fullconv.gz'
+    @classmethod
+    def isfullconv(cls, filename):
+        return filename.endswith('.fullconv.gz')
 
     @memo.memoized
     def annot_df(self, chrnum):

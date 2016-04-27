@@ -20,5 +20,5 @@ if __name__ == '__main__':
 
     print('submitting preprocessing')
     for s in exp.simulations:
-        for e in exp.estimators_and_truth():
+        for e in exp.estimators_and_truth:
             e.submit_preprocess(s, debug=args.debug)

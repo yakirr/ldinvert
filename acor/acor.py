@@ -5,6 +5,7 @@ import scipy.stats as stats
 import pandas as pd
 import pyutils.pretty as pretty
 import primitives.dataset as prd
+import primitives.annotation as pa
 import common
 
 
@@ -20,18 +21,20 @@ def make_conv3_names(names):
 def cor_fe(args):
     print('FIXED EFFECTS')
     print('loading information by chromosome')
-    annot, conv = pd.DataFrame(), pd.DataFrame()
+    annot, conv = [], []
     refpanel = prd.Dataset(args.bfile_chr)
+    annots = [pa.Annotation(fname) for fname in args.annot_chr]
+    convannots = [pa.Annotation(fname) for fname in args.conv_chr]
 
     # load annot and conv files and merge across chromosomes
     for chrnum in args.chroms:
         print('== chr', chrnum)
         # read data
         myannot, annot_names = common.get_annots(
-                [fname + chrnum + '.sannot.gz' for fname in args.annot_chr])
+                [a.sannot_filename(chrnum) for a in annots])
         myconv, conv_names = common.get_convs(
-                [fname + chrnum + '.conv.gz' for fname in args.conv_chr],
-                [fname + chrnum + '.sannot.gz' for fname in args.annot_chr],
+                [a.conv_filename(chrnum, args.fullconv) for a in convannots],
+                [a.sannot_filename(chrnum) for a in annots],
                 (refpanel, chrnum),
                 args.ld_breakpoints,
                 args.mhc_path)
@@ -43,8 +46,10 @@ def cor_fe(args):
             raise Exception(
                     'ERROR: conv file must contain same columns in same order as annot file')
         # append to previous chromosomes
-        annot = annot.append(myannot)
-        conv = conv.append(myconv)
+        annot.append(myannot)
+        conv.append(myconv)
+    annot = pd.concat(annot, axis=0).reset_index(drop=True)
+    conv = pd.concat(conv, axis=0).reset_index(drop=True)
 
     # merge annot and conv into one dataframe with the right columns
     annot[conv_names] = \
@@ -71,12 +76,14 @@ def cor_fe(args):
     cov = np.linalg.inv(VTRV) / N
 
     # print output
-    output = pd.DataFrame(columns=('NAME','MU_EST','MU_STDERR','MU_Z','MU_P'))
+    output = pd.DataFrame(columns=('NAME','MU_EST','MU_STDERR','MU_Z','MU_P', 'TOP', 'BOTTOM'))
     for i, n in enumerate(annot_names):
         std = np.sqrt(cov[i,i])
         output.loc[i] = [n, estimate[i], std,
                 estimate[i]/std,
-                stats.norm.sf(estimate[i]/std,0,1)]
+                2*stats.norm.sf(estimate[i]/std,0,1),
+                ','.join(map(str, LambdaRV.T.dot(alphahat).reshape((-1,)))),
+                ','.join(map(str, Sigma.reshape((-1,))))]
     print(output)
 
     covariance = pd.DataFrame(columns=annot_names, data=cov)
@@ -85,6 +92,7 @@ def cor_fe(args):
     output.to_csv(args.out+'.results', sep='\t', index=False)
     covariance.to_csv(args.out+'.cov', sep='\t', index=False)
 
+#TODO: replace chained calls to pd.append throughout with one call to pd.concat
 def cor_re(args):
     print('RANDOM EFFECTS')
 
@@ -96,21 +104,24 @@ def cor_re(args):
     sumstats = pd.merge(sumstats, ldscores, how='inner', on='SNP')
     sigma2g = (np.linalg.norm(sumstats['Z']/np.sqrt(sumstats['N']))**2 - \
             len(sumstats)/N) / np.sum(sumstats['L2'])
+    sigma2g = min(max(0,sigma2g), 1/len(sumstats))
     print('h2g estimated at:', sigma2g*len(sumstats), 'sigma2g:', sigma2g)
 
     print('loading information by chromosome')
-    annot, conv = pd.DataFrame(), pd.DataFrame()
+    annot, conv = [], []
     refpanel = prd.Dataset(args.bfile_chr)
+    annots = [pa.Annotation(fname) for fname in args.annot_chr]
+    convannots = [pa.Annotation(fname) for fname in args.conv_chr]
 
     # load annot and conv files and merge across chromosomes
     for chrnum in args.chroms:
         print('== chr', chrnum)
         # read data
         myannot, annot_names = common.get_annots(
-                [fname + chrnum + '.sannot.gz' for fname in args.annot_chr])
+                [a.sannot_filename(chrnum) for a in annots])
         myconv, conv_names = common.get_convs(
-                [fname + chrnum + '.conv.gz' for fname in args.conv_chr],
-                [fname + chrnum + '.sannot.gz' for fname in args.annot_chr],
+                [a.conv_filename(chrnum, args.fullconv) for a in convannots],
+                [a.sannot_filename(chrnum) for a in annots],
                 (refpanel, chrnum),
                 args.ld_breakpoints,
                 args.mhc_path)
@@ -124,13 +135,23 @@ def cor_re(args):
             raise Exception(
                     'ERROR: conv file must contain same columns in same order as annot file')
         # compute weights and reconvolve
-        myconv['Lambda'] = 1./(myldscores['L2'] / N + sigma2g * myldscores['L2']**2)
-        myconv[conv_names+'.w'] = myconv['Lambda'].values[:,None] * myconv[conv_names]
+        myconv['Lambda'] = 1./(
+                np.maximum(1, myldscores['L2']) / N + \
+                        sigma2g * np.maximum(1, myldscores['L2'])**2)
+        if args.noweights:
+            print('NOT using weights')
+            myconv[conv_names+'.w'] = myconv[conv_names]
+        else:
+            print('using weights')
+            myconv[conv_names+'.w'] = myconv['Lambda'].values[:,None] * myconv[conv_names]
         myconv, _ = common.convolve(myconv, conv_names+'.w',
-                (refpanel, chrnum), args.ld_breakpoints, args.mhc_path)
+                (refpanel, chrnum), args.ld_breakpoints, args.mhc_path,
+                fullconv=args.fullconv)
         # append to previous chromosomes
-        annot = annot.append(myannot)
-        conv = conv.append(myconv)
+        annot.append(myannot)
+        conv.append(myconv)
+    annot = pd.concat(annot, axis=0).reset_index(drop=True)
+    conv = pd.concat(conv, axis=0).reset_index(drop=True)
 
     # merge annot and conv into one dataframe with the right columns
     names = np.concatenate([conv_names,conv_names+'.w',conv_names+'.w.conv1'])
@@ -162,12 +183,14 @@ def cor_re(args):
     cov = var1 + var2
 
     # print output
-    output = pd.DataFrame(columns=('NAME','MU_EST','MU_STDERR','MU_Z','MU_P'))
+    output = pd.DataFrame(columns=('NAME','MU_EST','MU_STDERR','MU_Z','MU_P', 'TOP', 'BOTTOM'))
     for i, n in enumerate(annot_names):
         std = np.sqrt(cov[i,i])
         output.loc[i] = [n, estimate[i], std,
                 estimate[i]/std,
-                stats.norm.sf(estimate[i]/std,0,1)]
+                2*stats.norm.sf(estimate[i]/std,0,1),
+                ','.join(map(str, LambdaRV.T.dot(alphahat).reshape((-1,)))),
+                ','.join(map(str, Sigma.reshape((-1,))))]
     print(output)
 
     covariance = pd.DataFrame(columns=annot_names, data=cov)
@@ -181,14 +204,16 @@ def conv(args):
     print('loading information by chromosome')
     annot, conv = pd.DataFrame(), pd.DataFrame()
     refpanel = prd.Dataset(args.bfile_chr)
+    annots = [pa.Annotation(fname) for fname in args.annot_chr]
+    convannots = [pa.Annotation(fname) for fname in args.conv_chr]
 
     # load annot and conv files. they will automatically be created if they don't exist
     for chrnum in args.chroms:
         print('== chr', chrnum)
         # read data
         myconv, conv_names = common.get_convs(
-                [fname + chrnum + '.conv.gz' for fname in args.conv_chr],
-                [fname + chrnum + '.sannot.gz' for fname in args.annot_chr],
+                [a.conv_filename(chrnum, args.fullconv) for a in convannots],
+                [a.sannot_filename(chrnum) for a in annots],
                 (refpanel, chrnum),
                 args.ld_breakpoints,
                 args.mhc_path)
@@ -211,8 +236,10 @@ if __name__ == '__main__':
             help='path to plink bfile of reference panel to use, not including chrom num')
     parser.add_argument('--conv-chr', nargs='+',
             help='space-delimited list of gzipped conv filenames, not including ' + \
-                    'chromosome number or .conv.gz extension. If not provided, we use ' +\
-                    'the value of --annot-chr for this')
+                    'chromosome number or .conv(full).gz extension. If not provided, we use'+\
+                    ' the value of --annot-chr for this')
+    parser.add_argument('-fullconv', action='store_true', default=False,
+            help='use/generate .fullconv.gz files, which dont take LD blocks into account')
     subparsers = parser.add_subparsers()
 
     subparser_conv = subparsers.add_parser('conv')
@@ -240,6 +267,8 @@ if __name__ == '__main__':
             help='which chromosomes to analyze')
     subparser_cor_re = subparser_cor_subs.add_parser('re')
     subparser_cor_re.set_defaults(_func=cor_re)
+    subparser_cor_re.add_argument('-noweights', action='store_true', default=False,
+            help='do not weight the regression')
     subparser_cor_re.add_argument('--chroms', nargs='+',
             default=[str(i) for i in range(1,23)],
             help='which chromosomes to analyze')

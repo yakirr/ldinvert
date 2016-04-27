@@ -18,19 +18,31 @@ class Acor(Estimator):
             help='the name of the coefficient to report')
     parser.add_argument('--kind', type=str, required=True,
             help='re for random effects, fe for fixed')
+    parser.add_argument('--fullconv', type=int, default=0,
+            help='0 means use ld blocks in computing conv files, 1 means dont')
+    parser.add_argument('--weights', type=int, default=1,
+            help='1 means weight the RE regression, 0 means dont')
+    parser.add_argument('--print', type=str, default='all',
+            help='all means print normal estimate. num means print numerator. denom ' + \
+                    'means print denominator')
 
     def fsid(self):
         return 'Acor.{},coeff={},A={}'.format(
                 self.params.kind,
                 self.params.coeff,
-                self.params.annot_chr.replace('/','_'))
+                self.params.annot_chr.replace('/','_')) + \
+                    (',fc' if self.params.fullconv else '') + \
+                    (',nowt' if not self.params.weights else '') + \
+                    (',num' if self.params.print == 'num' else '') + \
+                    (',den' if self.params.print == 'denom' else '')
 
     # NOTE: the function below assumes that the ldscores for the reference panel have
     # already been computed
     def required_files(self, s):
         annots = [pa.Annotation(paths.annotations + aname)
                 for aname in self.params.annot_chr.split(',')]
-        return [a.conv_filename(c) for c in s.chromosomes for a in annots]
+        return [a.conv_filename(c, full=self.params.fullconv)
+                for c in s.chromosomes for a in annots]
 
     def preprocess(self, s):
         print('Acor is preprocessing', s.name,
@@ -42,14 +54,24 @@ class Acor(Estimator):
 
         for a in annots:
             print('preprocessing', a.filestem())
-            cmd = [
-                    'python', '-u', paths.code + 'acor/acor.py',
-                    '--annot-chr', a.stem_chr,
-                    '--bfile-chr', self.refpanel.bfile_chr,
-                    'conv',
-                    '--chroms', ' '.join(str(c) for c in s.chromosomes)]
-            print(' '.join(cmd))
-            subprocess.call(cmd)
+            for c in s.chromosomes:
+                if not os.path.exists(a.conv_filename(c, full=self.params.fullconv)):
+                    conv_command = [
+                        'python', '-u', paths.code + 'acor/acor.py',
+                        '--annot-chr', a.stem_chr,
+                        '--bfile-chr', self.refpanel.bfile_chr] + \
+                        (['-fullconv'] if self.params.fullconv else []) + \
+                        ['conv',
+                        '--chroms', str(c)]
+                    print(' '.join(conv_command))
+                    outfilepath = a.filestem(c) + '.' + \
+                            ('full' if self.params.fullconv else '') + \
+                            'convbsub_out'
+                    bsub.submit(
+                            conv_command,
+                            outfilepath,
+                            jobname=self.params.annot_chr.replace('/','_') + \
+                                    ',conv,chr='+str(c))
 
     def run(self, s, beta_num):
         print('Acor is running', s.name, 'on beta', beta_num,
@@ -61,22 +83,29 @@ class Acor(Estimator):
         cmd = [
                 'python', '-u', paths.code + 'acor/acor.py',
                 '--annot-chr', ' '.join([a.stem_chr for a in annots]),
-                '--bfile-chr', self.refpanel.bfile_chr,
-                'cor',
+                '--bfile-chr', self.refpanel.bfile_chr] + \
+                (['-fullconv'] if self.params.fullconv else []) + \
+                ['cor',
                 '--ldscores-chr', self.refpanel.bfile_chr,
                 '--sumstats', s.sumstats_filename(beta_num),
-                '--out', self.results_file(s, beta_num),
+                '--out', self.result_filename(s, beta_num),
                 self.params.kind,
-                '--chroms', ' '.join(str(c) for c in s.chromosomes)]
+                '-noweights' if not self.params.weights else '',
+                '--chroms'] + [str(c) for c in s.chromosomes]
         print(' '.join(cmd))
         subprocess.call(cmd)
 
-        acorresults = pd.read_csv(self.results_file(s, beta_num)+'.results',
+        acorresults = pd.read_csv(self.result_filename(s, beta_num)+'.results',
                 delim_whitespace=True,
                 header=0)
         rowindex = np.where(np.concatenate([
-            list(a.names(s.chromosomes[-1])) for a in annots]) == self.params.coeff)[0]
-        estimate = acorresults['MU_EST'][rowindex]
+            a.names(s.chromosomes[-1]) for a in annots]) == self.params.coeff)[0][0]
+        if self.params.print == 'all':
+            estimate = acorresults['MU_EST'][rowindex]
+        elif self.params.print == 'num':
+            estimate = acorresults['TOP'][rowindex]
+        elif self.params.print == 'denom':
+            estimate = acorresults['BOTTOM'][rowindex]
         stderr = acorresults['MU_STDERR'][rowindex]
         pval = acorresults['MU_P'][rowindex]
 

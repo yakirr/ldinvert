@@ -17,9 +17,9 @@ class Estimators(object):
         return self.estimators.__iter__()
 
     @classmethod
-    def create_estimator_from_json(cls, json_entry):
+    def create_estimator_from_json(cls, json_entry, debug=False):
         method_name = json_entry['method']; del json_entry['method']
-        print('creating estimator', method_name)
+        if debug: print('creating estimator', method_name)
         return smethods.find_method(method_name)(**json_entry)
 
 
@@ -47,13 +47,6 @@ class Experiment(object):
         if create:
             fs.makedir(path)
         return path
-
-    # def plot_filename(self, s):
-    #     return self.results_folder() + s.readable_name() + '.results.png'
-
-    # def resultstsv_filename(self, s, est):
-    #     return self.results_folder() + s.readable_name() + '.' + \
-    #             est.readable_name() + '.results.tsv'
 
     @property
     def purpose_filename(self):

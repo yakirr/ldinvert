@@ -22,19 +22,26 @@ class Acor(Estimator):
             help='0 means use ld blocks in computing conv files, 1 means dont')
     parser.add_argument('--weights', type=int, default=1,
             help='1 means weight the RE regression, 0 means dont')
+    parser.add_argument('--maf_thresh', type=float, default=0,
+            help='threshold for which snps to include in RE regression')
+    parser.add_argument('--biascorrect', type=int, default=0,
+            help='1 means bias correct the denominator of the RE regression')
     parser.add_argument('--print', type=str, default='all',
             help='all means print normal estimate. num means print numerator. denom ' + \
                     'means print denominator')
 
     def fsid(self):
         return 'Acor.{},coeff={},A={}'.format(
-                self.params.kind,
-                self.params.coeff,
-                self.params.annot_chr.replace('/','_')) + \
-                    (',fc' if self.params.fullconv else '') + \
-                    (',nowt' if not self.params.weights else '') + \
-                    (',num' if self.params.print == 'num' else '') + \
-                    (',den' if self.params.print == 'denom' else '')
+            self.params.kind,
+            self.params.coeff,
+            self.params.annot_chr.replace('/','_')) + \
+                (',fc' if self.params.fullconv else '') + \
+                (',nowt' if not self.params.weights else '') + \
+                (',num' if self.params.print == 'num' else '') + \
+                (',den' if self.params.print == 'denom' else '') + \
+                (',bc' if self.params.biascorrect else '') + \
+                ('maf{:0.3f}'.format(self.params.maf_thresh)
+                        if self.params.maf_thresh>0 else '')
 
     # NOTE: the function below assumes that the ldscores for the reference panel have
     # already been computed
@@ -89,9 +96,12 @@ class Acor(Estimator):
                 '--ldscores-chr', self.refpanel.bfile_chr,
                 '--sumstats', s.sumstats_filename(beta_num),
                 '--out', self.result_filename(s, beta_num),
-                self.params.kind,
-                '-noweights' if not self.params.weights else '',
-                '--chroms'] + [str(c) for c in s.chromosomes]
+                self.params.kind] + \
+                (['-noweights'] if not self.params.weights else []) + \
+                (['-biascorrect'] if self.params.biascorrect else []) + \
+                (['--maf-thresh', str(self.params.maf_thresh)] if self.params.maf_thresh > 0
+                        else []) + \
+                ['--chroms'] + [str(c) for c in s.chromosomes]
         print(' '.join(cmd))
         subprocess.call(cmd)
 

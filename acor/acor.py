@@ -81,9 +81,9 @@ def cor_fe(args):
         std = np.sqrt(cov[i,i])
         output.loc[i] = [n, estimate[i], std,
                 estimate[i]/std,
-                2*stats.norm.sf(estimate[i]/std,0,1),
-                ','.join(map(str, LambdaRV.T.dot(alphahat).reshape((-1,)))),
-                ','.join(map(str, Sigma.reshape((-1,))))]
+                2*stats.norm.sf(abs(estimate[i]/std),0,1),
+                ','.join(map(str, V.T.dot(alphahat).reshape((-1,)))),
+                ','.join(map(str, VTRV.reshape((-1,))))]
     print(output)
 
     covariance = pd.DataFrame(columns=annot_names, data=cov)
@@ -92,7 +92,6 @@ def cor_fe(args):
     output.to_csv(args.out+'.results', sep='\t', index=False)
     covariance.to_csv(args.out+'.cov', sep='\t', index=False)
 
-#TODO: replace chained calls to pd.append throughout with one call to pd.concat
 def cor_re(args):
     print('RANDOM EFFECTS')
 
@@ -109,6 +108,7 @@ def cor_re(args):
 
     print('loading information by chromosome')
     annot, conv = [], []
+    biascorrection = 0
     refpanel = prd.Dataset(args.bfile_chr)
     annots = [pa.Annotation(fname) for fname in args.annot_chr]
     convannots = [pa.Annotation(fname) for fname in args.conv_chr]
@@ -134,16 +134,32 @@ def cor_re(args):
         if find_conv1_names(myconv.columns) != make_conv1_names(annot_names):
             raise Exception(
                     'ERROR: conv file must contain same columns in same order as annot file')
-        # compute weights and reconvolve
-        myconv['Lambda'] = 1./(
-                np.maximum(1, myldscores['L2']) / N + \
-                        sigma2g * np.maximum(1, myldscores['L2'])**2)
+        # compute weights
         if args.noweights:
             print('NOT using weights')
-            myconv[conv_names+'.w'] = myconv[conv_names]
+            myconv['Lambda'] = 1
         else:
             print('using weights')
-            myconv[conv_names+'.w'] = myconv['Lambda'].values[:,None] * myconv[conv_names]
+            myconv['Lambda'] = 1./(
+                    np.maximum(1, myldscores['L2']) / N + \
+                            sigma2g * np.maximum(1, myldscores['L2'])**2)
+        print('applying MAF threshold of', args.maf_thresh)
+        maf = refpanel.frq_df(chrnum)['MAF'].values
+        print('\tremoving', np.sum(maf < args.maf_thresh), 'snps from regression')
+        myconv.loc[maf < args.maf_thresh, 'Lambda'] = 0
+        # compute bias correction for denominator of regression if necessary
+        if args.biascorrect:
+            biaschr = common.get_biascorrection(
+                    myannot[annot_names].values,
+                    myconv[make_conv1_names(annot_names)].values,
+                    myconv['Lambda'].values,
+                    (refpanel, chrnum),
+                    args.ld_breakpoints,
+                    args.mhc_path)
+            print('\tbias correction for this chr:', biaschr)
+            biascorrection += biaschr
+        # reconvolve
+        myconv[conv_names+'.w'] = myconv['Lambda'].values[:,None] * myconv[conv_names]
         myconv, _ = common.convolve(myconv, conv_names+'.w',
                 (refpanel, chrnum), args.ld_breakpoints, args.mhc_path,
                 fullconv=args.fullconv)
@@ -174,7 +190,7 @@ def cor_re(args):
     alphahat = zannotconv['Z'] / np.sqrt(zannotconv['N'].values)
 
     # compute the estimate
-    Sigma = RV.T.dot(LambdaRV)
+    Sigma = RV.T.dot(LambdaRV) - biascorrection
     estimate = np.linalg.solve(Sigma, LambdaRV.T.dot(alphahat))
     Sigmai = np.linalg.inv(Sigma)
     var1 = Sigmai.dot(LambdaRV.T).dot(RLambdaRV.dot(Sigmai)) / N
@@ -188,7 +204,7 @@ def cor_re(args):
         std = np.sqrt(cov[i,i])
         output.loc[i] = [n, estimate[i], std,
                 estimate[i]/std,
-                2*stats.norm.sf(estimate[i]/std,0,1),
+                2*stats.norm.sf(abs(estimate[i]/std),0,1),
                 ','.join(map(str, LambdaRV.T.dot(alphahat).reshape((-1,)))),
                 ','.join(map(str, Sigma.reshape((-1,))))]
     print(output)
@@ -269,6 +285,10 @@ if __name__ == '__main__':
     subparser_cor_re.set_defaults(_func=cor_re)
     subparser_cor_re.add_argument('-noweights', action='store_true', default=False,
             help='do not weight the regression')
+    subparser_cor_re.add_argument('--maf-thresh', type=float, default=0,
+            help='SNPs with maf below this threshold will not be included in regression')
+    subparser_cor_re.add_argument('-biascorrect', action='store_true', default=False,
+            help='bias correct the denominator of the regression')
     subparser_cor_re.add_argument('--chroms', nargs='+',
             default=[str(i) for i in range(1,23)],
             help='which chromosomes to analyze')

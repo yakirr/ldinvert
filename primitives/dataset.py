@@ -55,18 +55,21 @@ class Dataset(object):
     @memo.memoized
     def ucscbed(self, chrnum):
         if os.path.exists(self.ucscbedfile(chrnum)):
-            return BedTool(self.ucscbedfile(chrnum))
-        else:
-            print('NOTE: ucscbed file for', self.bfile(chrnum), 'not found. creating...')
-            ucscbed = []
-            for row in self.bim_df(chrnum).iterrows():
-                ucscbed.append('chr{}\t{}\t{}'.format(
-                    row[1]['CHR'],
-                    row[1]['BP'],
-                    int(row[1]['BP'])+1))
-            print('DONE')
-            return BedTool('\n'.join(ucscbed), from_string=True).saveas(
-                    self.ucscbedfile(chrnum))
+            bt = BedTool(self.ucscbedfile(chrnum))
+            if len(bt) == self.M(chrnum):
+                return BedTool(self.ucscbedfile(chrnum))
+            else:
+                print('NOTE: ucscbed file for', self.bfile(chrnum), 'is wrong length.')
+        print('NOTE: ucscbed file for',self.bfile(chrnum),'not found/incomplete. creating...')
+        ucscbed = []
+        for row in self.bim_df(chrnum).iterrows():
+            ucscbed.append('chr{}\t{}\t{}'.format(
+                row[1]['CHR'],
+                row[1]['BP'],
+                int(row[1]['BP'])+1))
+        print('DONE')
+        return BedTool('\n'.join(ucscbed), from_string=True).saveas(
+                self.ucscbedfile(chrnum))
 
 
 if __name__ == '__main__':

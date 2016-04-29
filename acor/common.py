@@ -76,6 +76,20 @@ def mult_by_R_ldblocks(V, (refpanel, chrnum), ld_breakpoints, mhcpath):
         result[r[0]:r[1],:] = X.T.dot(X.dot(V[r[0]:r[1],:]))
     return result / refpanel.N()
 
+def get_biascorrection(V, RV, Lambda, (refpanel, chrnum), breakpoints, mhcpath):
+    print('\tloading ld breakpoints and MHC')
+    breakpoints = BedTool(breakpoints)
+    mhc = BedTool(mhcpath)
+    print('\tconstructing SNP partition')
+    blocks = prg.SnpPartition(refpanel.ucscbed(chrnum), breakpoints, mhc)
+
+    print('\tcomputing bias term')
+    result = 0
+    for r in blocks.ranges():
+        result += V[r[0]:r[1]].T.dot(RV[r[0]:r[1]]) * \
+                np.sum(Lambda[r[0]:r[1]]) / refpanel.N()
+    return result
+
 def mult_by_R_noldblocks(V, (refpanel, chrnum)):
     r = 0
     XV = 0
@@ -94,9 +108,6 @@ def mult_by_R_noldblocks(V, (refpanel, chrnum)):
         XTXV[s[0]:s[1]] = X.T.dot(XV)
         r += 1000
     return XTXV / refpanel.N()
-
-def mult_by_R_cmwindow(V, (refpanel, chrnum)):
-    pass
 
 def sparse_QF(v1, v2, (refpanel, chrnum)):
     v1 = v1.reshape((-1,))

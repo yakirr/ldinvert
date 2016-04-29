@@ -2,9 +2,10 @@ from __future__ import print_function, division
 import argparse
 import numpy as np
 import pandas as pd
+import os
 from estimator import Estimator
 import primitives.annotation as pa
-from pyutils import memo
+from pyutils import memo, bsub
 import paths
 
 class TruthRE(Estimator):
@@ -41,18 +42,18 @@ class TruthRE(Estimator):
                 'with refpanel=', self.params.refpanel)
         print(self.params)
 
-        print('preprocessing', a.filestem())
+        print('preprocessing', self.annotation.filestem())
         for c in s.chromosomes:
-            if not os.path.exists(a.conv_filename(c, full=True)):
+            if not os.path.exists(self.annotation.conv_filename(c, full=True)):
                 conv_command = [
                     'python', '-u', paths.code + 'acor/acor.py',
-                    '--annot-chr', a.stem_chr,
+                    '--annot-chr', self.annotation.stem_chr,
                     '--bfile-chr', self.refpanel.bfile_chr,
                     '-fullconv',
                     'conv',
                     '--chroms', str(c)]
                 print(' '.join(conv_command))
-                outfilepath = a.filestem(c) + '.convbsub_out'
+                outfilepath = self.annotation.filestem(c) + '.convbsub_out'
                 bsub.submit(
                         conv_command,
                         outfilepath,
@@ -125,18 +126,18 @@ class TruthFE(Estimator):
                 'with refpanel=', self.params.refpanel)
         print(self.params)
 
-        print('preprocessing', a.filestem())
+        print('preprocessing', self.annotation.filestem())
         for c in s.chromosomes:
-            if not os.path.exists(a.conv_filename(c, full=self.params.fullconv)):
+            if not os.path.exists(self.annotation.conv_filename(c, full=self.params.fullconv)):
                 conv_command = [
                     'python', '-u', paths.code + 'acor/acor.py',
-                    '--annot-chr', a.stem_chr,
+                    '--annot-chr', self.annotation.stem_chr,
                     '--bfile-chr', self.refpanel.bfile_chr] + \
                     (['-fullconv'] if self.params.fullconv else []) + \
                     ['conv',
                     '--chroms', str(c)]
                 print(' '.join(conv_command))
-                outfilepath = a.filestem(c) + '.convbsub_out'
+                outfilepath = self.annotation.filestem(c) + '.convbsub_out'
                 bsub.submit(
                         conv_command,
                         outfilepath,

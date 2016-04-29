@@ -113,7 +113,7 @@ class Estimator(object):
             return 'run-{}-{}[1-{}]'.format(
                 self.fsid(), s.name, self.num_batches(s))
 
-        if not self.missing_results(s):
+        if not self.missing_results(s) and not overwrite:
             print('submission unnecessary for', str(self), 'on', s.name)
             return
         if not self.dependencies_satisfied(s):

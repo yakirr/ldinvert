@@ -26,6 +26,8 @@ class Acor(Estimator):
             help='threshold for which snps to include in RE regression')
     parser.add_argument('--biascorrect', type=int, default=0,
             help='1 means bias correct the denominator of the RE regression')
+    parser.add_argument('--regvar', type=int, default=0,
+            help='1 means report a std. error based on a random-beta model even for acorfe')
     parser.add_argument('--print', type=str, default='all',
             help='all means print normal estimate. num means print numerator. denom ' + \
                     'means print denominator')
@@ -41,7 +43,8 @@ class Acor(Estimator):
                 (',den' if self.params.print == 'denom' else '') + \
                 (',bc' if self.params.biascorrect else '') + \
                 ('maf{:0.3f}'.format(self.params.maf_thresh)
-                        if self.params.maf_thresh>0 else '')
+                        if self.params.maf_thresh>0 else '') + \
+                (',rv' if self.params.regvar else '')
 
     # NOTE: the function below assumes that the ldscores for the reference panel have
     # already been computed
@@ -97,6 +100,7 @@ class Acor(Estimator):
                 '--sumstats', s.sumstats_filename(beta_num),
                 '--out', self.result_filename(s, beta_num),
                 self.params.kind] + \
+                (['-reg-var'] if self.params.regvar else []) + \
                 (['-noweights'] if not self.params.weights else []) + \
                 (['-biascorrect'] if self.params.biascorrect else []) + \
                 (['--maf-thresh', str(self.params.maf_thresh)] if self.params.maf_thresh > 0

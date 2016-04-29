@@ -166,7 +166,7 @@ class Estimator(object):
                     map(float, open(self.result_filename(s, beta_num)).readlines()[1].split())
                         for beta_num in range(1, s.num_betas+1)]
             except:
-                print('ERROR PARSING')
+                print('ERROR PARSING RESULTS')
                 print([open(self.result_filename(s, beta_num)).readlines()[1].split()
                     for beta_num in range(1, s.num_betas+1)])
                 exit()

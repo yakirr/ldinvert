@@ -18,8 +18,24 @@ def make_conv1_names(names):
 def make_conv3_names(names):
     return [n+'.conv3' for n in names]
 
+def ldscores_sumstats_sigma2g(args):
+    ldscores = common.get_ldscores_allchr(args.ldscores_chr, args.chroms)
+    ldscores = ldscores[['SNP','L2']]
+    sumstats = common.get_sumstats(args.sumstats)
+    #TODO: change this to mean N at some point? or the appropriate 1/N1+1/N2+...+1/Nm?
+    N = np.min(sumstats['N'].values)
+    print('merging sumstats and ldscores')
+    sumstats = pd.merge(sumstats, ldscores, how='inner', on='SNP')
+    sigma2g = (np.linalg.norm(sumstats['Z']/np.sqrt(sumstats['N']))**2 - \
+            len(sumstats)/N) / np.sum(sumstats['L2'])
+    sigma2g = min(max(0,sigma2g), 1/len(sumstats))
+    print('h2g estimated at:', sigma2g*len(sumstats), 'sigma2g:', sigma2g)
+    return sumstats, sigma2g
+
 def cor_fe(args):
     print('FIXED EFFECTS')
+    sumstats, sigma2g = ldscores_sumstats_sigma2g(args)
+
     print('loading information by chromosome')
     annot, conv = [], []
     refpanel = prd.Dataset(args.bfile_chr)
@@ -56,8 +72,7 @@ def cor_fe(args):
             conv[conv_names]
     print('==done')
 
-    # load sumstats and merge them with the annot, flipping alleles if necessary
-    sumstats = common.get_sumstats(args.sumstats)
+    # merge sumstats with the annot, flipping alleles if necessary
     print('merging sumstats and annot file')
     zannotconv = pd.merge(sumstats, annot, how='inner', on='SNP')
     print('matching sumstats alleles and annot alleles')
@@ -74,6 +89,9 @@ def cor_fe(args):
     VTRV = V.T.dot(RV)
     estimate = np.linalg.solve(VTRV, V.T.dot(alphahat))
     cov = np.linalg.inv(VTRV) / N
+    cov2 = sigma2g * np.linalg.solve(VTRV, np.linalg.solve(VTRV, RV.T.dot(RV)).T)
+    if args.reg_var:
+        cov += cov2
 
     # print output
     output = pd.DataFrame(columns=('NAME','MU_EST','MU_STDERR','MU_Z','MU_P', 'TOP', 'BOTTOM'))
@@ -94,17 +112,7 @@ def cor_fe(args):
 
 def cor_re(args):
     print('RANDOM EFFECTS')
-
-    ldscores = common.get_ldscores_allchr(args.ldscores_chr, args.chroms)
-    ldscores = ldscores[['SNP','L2']]
-    sumstats = common.get_sumstats(args.sumstats)
-    N = np.min(sumstats['N'].values)
-    print('merging sumstats and ldscores')
-    sumstats = pd.merge(sumstats, ldscores, how='inner', on='SNP')
-    sigma2g = (np.linalg.norm(sumstats['Z']/np.sqrt(sumstats['N']))**2 - \
-            len(sumstats)/N) / np.sum(sumstats['L2'])
-    sigma2g = min(max(0,sigma2g), 1/len(sumstats))
-    print('h2g estimated at:', sigma2g*len(sumstats), 'sigma2g:', sigma2g)
+    sumstats, sigma2g = ldscores_sumstats_sigma2g(args)
 
     print('loading information by chromosome')
     annot, conv = [], []
@@ -278,6 +286,8 @@ if __name__ == '__main__':
     subparser_cor_subs = subparser_cor.add_subparsers()
     subparser_cor_fe = subparser_cor_subs.add_parser('fe')
     subparser_cor_fe.set_defaults(_func=cor_fe)
+    subparser_cor_fe.add_argument('-reg-var', action='store_true', default=False,
+            help='report a std. error based on a random-beta model')
     subparser_cor_fe.add_argument('--chroms', nargs='+',
             default=[str(i) for i in range(1,23)],
             help='which chromosomes to analyze')

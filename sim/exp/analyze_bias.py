@@ -6,22 +6,28 @@ import matplotlib.pyplot as plt
 from experiment import Experiment
 
 
-def create_plot(exp, s, to_plot, all_results, pretty=False):
+def create_plot(exp, s, to_plot, all_results, plotestimate=False, pretty=False,
+        drop_mses=True):
     print('inside create_plot')
-    mses = {e:'{:.2e}'.format(np.mean(all_results[e]['BIAS']**2)) for e in to_plot}
+    mses = {e:'{:.1e}'.format(np.mean(all_results[e]['BIAS']**2)) for e in to_plot}
 
     def label(e):
-        if not pretty:
-            return e.fsid().replace(',','\n') + '\n' + mses[e]
+        if pretty:
+            stem = e.params.pretty_name.replace(',','\n')
         else:
-            return e.params.pretty_name.replace(',','\n')
+            stem = e.fsid().replace(',','\n')
+        suffix = '' if drop_mses else ('\nMSE:' + mses[e])
+        return stem + suffix
     def filename(stdaxes=False):
         return '{}{}.biasplot'.format(exp.results_folder(), s.name) + \
                 ('.axes' if stdaxes else '') + '.png'
 
+    scorename = ('ESTIMATE' if plotestimate else 'BIAS')
+    horizontal_line = np.mean(all_results.values()[0]['TRUTH']) if plotestimate else 0
+
     # create box plots
     plt.figure()
-    plt.boxplot([all_results[e]['BIAS'] for e in to_plot],
+    plt.boxplot([all_results[e][scorename] for e in to_plot],
         labels=[label(e) for e in to_plot],
         sym='',
         widths=0.75)
@@ -31,16 +37,21 @@ def create_plot(exp, s, to_plot, all_results, pretty=False):
         # x = np.random.normal(1+i, 0.06, size=len(error_lists[e]))
         delta = 0.6/len(all_results[e])
         x = (1 + i) + np.arange(-0.3, 0.3, delta) + delta/2
-        plt.plot(x, all_results[e]['BIAS'], 'r.', alpha=1)
-        plt.plot([1+i], np.mean(all_results[e]['BIAS']), 'k.')
+        plt.plot(x, all_results[e][scorename], 'r.', alpha=1)
+        plt.plot([1+i], np.mean(all_results[e][scorename]), 'k.')
 
     # formatting
     plt.xticks(rotation=35)
-    plt.axhline(y=0)
-    plt.ylabel('error')
+    plt.axhline(y=horizontal_line)
+    if plotestimate:
+        plt.ylabel('estimate')
+    else:
+        plt.ylabel('error')
     if not pretty:
         plt.title(s.name)
     fig = plt.gcf()
+    if plotestimate and horizontal_line != 0:
+        fig.gca().set_ylim(bottom=0, top=2*horizontal_line)
     fig.set_size_inches(2 + len(to_plot) * 1.5, 10)
     fig.subplots_adjust(bottom=0.25)
 
@@ -48,9 +59,9 @@ def create_plot(exp, s, to_plot, all_results, pretty=False):
     fig.savefig(filename(), dpi=300)
     print('showing figure')
     plt.show()
-    fig.gca().set_ylim([-0.1, 0.1])
-    print('saving with standardized axes')
-    fig.savefig(filename(stdaxes=True), dpi=300)
+    # fig.gca().set_ylim([-0.1, 0.1])
+    # print('saving with standardized axes')
+    # fig.savefig(filename(stdaxes=True), dpi=300)
 
 def write_results(exp, s, all_results):
     def filename(est):
@@ -64,9 +75,14 @@ if __name__ == '__main__':
     parser.add_argument('--exp-name',
             help='the name of the json experiment file whose results we wish to plot')
     parser.add_argument('-pretty', action='store_true', default=False,
-            help='print short pretty names for methods and leave out mse\'s')
+            help='print short pretty names for methods')
+    parser.add_argument('-drop-mses', action='store_true', default=False,
+            help='dont print mses')
     parser.add_argument('--exclude', nargs='+', default=[],
             help='list of pretty names of methods to exclude')
+    parser.add_argument('-plotestimate', action='store_true', default=False,
+            help='rather than plotting errors relative to 0, plot estimates ' + \
+                    'relative to average value of truth.')
     args = parser.parse_args()
 
     print('loading experiment', args.exp_name)
@@ -89,7 +105,7 @@ if __name__ == '__main__':
         all_results = {}
         to_plot = []
         for est in exp.estimators:
-            if est.params.pretty_name in args.exclude + exp.exclude:
+            if est.params.pretty_name in args.exclude:
                 continue
             to_plot.append(est)
             results = est.results(s)
@@ -98,6 +114,8 @@ if __name__ == '__main__':
             merged = merged[['BETA_NUM', 'ESTIMATE', 'TRUTH', 'BIAS']]
             all_results[est] = merged
         write_results(exp, s, all_results)
-        create_plot(exp, s, to_plot, all_results, pretty=args.pretty)
+        create_plot(exp, s, to_plot, all_results,
+                plotestimate=args.plotestimate, pretty=args.pretty,
+                drop_mses=args.drop_mses)
     map(plot_results_for, exp.simulations)
 

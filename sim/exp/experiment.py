@@ -42,6 +42,12 @@ class Experiment(object):
         self.truth = Estimators.create_estimator_from_json(self.truth)
         self.simulations = Simulations(self.simulations)
 
+        if not hasattr(self, 'exclude'):
+            self.exclude = []
+        self.estimators = list(filter(
+            lambda e: e.params.pretty_name not in self.exclude,
+            self.estimators))
+
     def results_folder(self, create=True):
         path = paths.results + self.name + '/'
         if create:

@@ -30,11 +30,11 @@ def ldscores_sumstats_sigma2g(args):
             len(sumstats)/N) / np.sum(sumstats['L2'])
     sigma2g = min(max(0,sigma2g), 1/len(sumstats))
     print('h2g estimated at:', sigma2g*len(sumstats), 'sigma2g:', sigma2g)
-    return sumstats, sigma2g
+    return sumstats, sigma2g, N
 
 def cor_fe(args):
     print('FIXED EFFECTS')
-    sumstats, sigma2g = ldscores_sumstats_sigma2g(args)
+    sumstats, sigma2g, _ = ldscores_sumstats_sigma2g(args)
 
     print('loading information by chromosome')
     annot, conv = [], []
@@ -112,7 +112,7 @@ def cor_fe(args):
 
 def cor_re(args):
     print('RANDOM EFFECTS')
-    sumstats, sigma2g = ldscores_sumstats_sigma2g(args)
+    sumstats, sigma2g, N = ldscores_sumstats_sigma2g(args)
 
     print('loading information by chromosome')
     annot, conv = [], []

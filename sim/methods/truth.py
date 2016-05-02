@@ -175,7 +175,7 @@ class TruthFENoLD(Estimator):
     parser.add_argument('--coeff', type=str, required=True,
             help='the coefficient to report')
     parser.add_argument('--annot_chr', type=str, required=True,
-            help='path to annotgz files, not incl chromosome number and extension')
+            help='path to sannotgz files, not incl chromosome number and extension')
 
     @property
     @memo.memoized
@@ -216,10 +216,10 @@ class TruthFENoLD(Estimator):
 
 if __name__ == '__main__':
     import sim.metadata as sm
-    s = sm.Simulation('smalltest')
+    s = sm.Simulation('mock_nullnm')
     # est = TruthRE(refpanel='1000G3.wim5u', coeff='ANNOT', output='total')
-    est = TruthFE(refpanel='GERAimp.wim5u', coeff='ANNOT', annot_chr='GERAimp.wim5u/mock/')
-    print(est.run(s, 1))
-    est = TruthFENoLD(refpanel='GERAimp.wim5u', coeff='ANNOT', annot_chr='GERAimp.wim5u/mock/')
+    # est = TruthFE(refpanel='GERAimp.wim5u', coeff='ANNOT', annot_chr='GERAimp.wim5u/mock/')
+    # print(est.run(s, 1))
+    est = TruthFENoLD(refpanel='GERAimp.wim5unm', coeff='ANNOT', annot_chr='GERAimp.wim5unm/mock/')
     print(est.run(s, 1))
 

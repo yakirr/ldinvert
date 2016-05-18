@@ -5,6 +5,7 @@ import numpy as np
 import gzip
 from pybedtools import BedTool
 from pyutils import iter as it
+import itertools
 import primitives.dataset as prd
 import primitives.genome as prg
 import primitives.annotation as pa
@@ -26,8 +27,10 @@ def get_sumstats(sumstatsfile):
     print('reading sumstats and filtering by sample size')
     sumstats = pd.read_csv(sumstatsfile, header=0, sep='\t',
             compression='gzip')
-    N90 = np.percentile(sumstats['N'], 90)
-    Nthresh = 0.9 * N90
+    print('\tremoving', np.sum(np.isnan(sumstats['N'])), 'snps with nans')
+    sumstats = sumstats.loc[~np.isnan(sumstats['N'])]
+    N90 = np.percentile(sumstats['N'], 50)
+    Nthresh = 0.5 * N90
     print('\tthreshold sample size:', Nthresh)
     print('\toriginally at', len(sumstats), 'SNPs')
     sumstats = sumstats.loc[
@@ -151,7 +154,6 @@ def convolve(df, cols_to_convolve, (refpanel, chrnum), ld_breakpoints, mhcpath,
 
     return df, newnames
 
-
 def get_conv(convfilename, annotfilename, (refpanel, chrnum), ld_breakpoints, mhcpath):
     if not os.path.exists(convfilename):
         print('\tconv file', convfilename, 'not found. creating...')
@@ -193,3 +195,27 @@ def get_convs(convfilenames, annotfilenames, (refpanel, chrnum), ld_breakpoints,
         conv_names += newconv_names
 
     return conv, conv_names
+
+def get_ambiguous(alleles, A1name, A2name):
+    allele = [''.join((a1, a2)) for (a1, a2) in zip(alleles[A1name], alleles[A2name])]
+    COMPLEMENT = {'A': 'T', 'T': 'A', 'C': 'G', 'G': 'C'}
+    BASES = COMPLEMENT.keys()
+    STRAND_AMBIGUOUS = {''.join(x): x[0] == COMPLEMENT[x[1]]
+        for x in itertools.product(BASES, BASES)
+        if x[0] != x[1]}
+    return np.array([STRAND_AMBIGUOUS[x] for x in allele])
+
+def check_for_strand_ambiguity(zannotconv, names):
+    nonzero = np.empty(len(zannotconv))
+    nonzero = False
+    for n in names:
+        nonzero |= (zannotconv[n] != 0)
+
+    print('\ttotal number of snps with non-zero annotation:', np.sum(nonzero))
+
+    amb = get_ambiguous(zannotconv.loc[nonzero], 'A1_x', 'A2_x')
+    if np.sum(amb) > 0:
+        print('\tannotation contains strand-ambiguous snps! aborting.')
+        exit(1)
+    else:
+        print('\tno strand-ambiguous snps found')

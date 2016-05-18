@@ -37,7 +37,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--exp-name', help='name of the json experiment file')
     parser.add_argument('--sig-levels', nargs='+', type=float, help='significance level')
-    parser.add_argument('--exclude', nargs='+', help='prettynames of estimators to ignore')
+    parser.add_argument('--exclude', nargs='+', default=[],
+            help='prettynames of estimators to ignore')
     args = parser.parse_args()
 
     exp = Experiment(args.exp_name)

@@ -50,6 +50,13 @@ class Annotation(object):
             return self.annot_df(chrnum).columns.values[4:]
         else: # assuming sannot exists
             return self.sannot_df(chrnum).columns.values[6:]
+    @classmethod
+    def names_observed(cls, names):
+        return [n + '.O' for n in names]
+    @classmethod
+    def names_conv(cls, names, observed=True):
+        O = ('.O' if observed else '')
+        return [n + O + '.conv' for n in names]
 
     @memo.memoized
     def num_snps(self, chrnum):

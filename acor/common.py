@@ -23,19 +23,25 @@ def get_ldscores_allchr(ldscoresfile_chr, chromosomes):
         ldscores.append(get_ldscores(ldscoresfile_chr + str(chrnum) + '.l2.ldscore.gz'))
     return pd.concat(ldscores).reset_index(drop=True)
 
-def get_sumstats(sumstatsfile):
+def get_sumstats(sumstatsfile, thresh_factor):
     print('reading sumstats and filtering by sample size')
     sumstats = pd.read_csv(sumstatsfile, header=0, sep='\t',
             compression='gzip')
     print('\tremoving', np.sum(np.isnan(sumstats['N'])), 'snps with nans')
     sumstats = sumstats.loc[~np.isnan(sumstats['N'])]
-    N90 = np.percentile(sumstats['N'], 50)
-    Nthresh = 0.5 * N90
+    N90 = np.percentile(sumstats['N'], 90)
+    Nthresh = thresh_factor * N90
     print('\tthreshold sample size:', Nthresh)
     print('\toriginally at', len(sumstats), 'SNPs')
     sumstats = sumstats.loc[
-            sumstats['N'] >= Nthresh]
+            sumstats['N'] <= Nthresh]
     print('\tafter filtering by N, now at', len(sumstats), 'SNPs')
+    print('\tmin, mean (std), max of N is:',
+            '{}, {} ({}), {}'.format(
+                np.min(sumstats.N),
+                np.mean(sumstats.N),
+                np.std(sumstats.N),
+                np.max(sumstats.N)))
     return sumstats
 
 def get_annot(annotfilename):
@@ -133,7 +139,7 @@ def sparse_QF(v1, v2, (refpanel, chrnum)):
     return Xv1.dot(Xv2)/refpanel.N()
 
 def convolve(df, cols_to_convolve, (refpanel, chrnum), ld_breakpoints, mhcpath,
-        fullconv=False):
+        fullconv=False, newnames=None):
     print('\trefpanel contains', refpanel.M(chrnum), 'SNPs')
     print('\tmerging df and refpanel')
     if len(df) != len(refpanel.bim_df(chrnum)):
@@ -148,7 +154,8 @@ def convolve(df, cols_to_convolve, (refpanel, chrnum), ld_breakpoints, mhcpath,
         RV = mult_by_R_ldblocks(refwithdf[cols_to_convolve].values, (refpanel, chrnum),
                 ld_breakpoints, mhcpath)
 
-    newnames = [n+'.conv1' for n in cols_to_convolve]
+    if newnames is None:
+        newnames = [n+'.conv1' for n in cols_to_convolve]
     for i, n1 in enumerate(newnames):
         df[n1] = RV[:,i]
 
@@ -205,17 +212,18 @@ def get_ambiguous(alleles, A1name, A2name):
         if x[0] != x[1]}
     return np.array([STRAND_AMBIGUOUS[x] for x in allele])
 
-def check_for_strand_ambiguity(zannotconv, names):
-    nonzero = np.empty(len(zannotconv))
+def check_for_strand_ambiguity(data, names, A1name='A1_x', A2name='A2_x'):
+    nonzero = np.empty(len(data))
     nonzero = False
     for n in names:
-        nonzero |= (zannotconv[n] != 0)
+        nonzero |= (data[n] != 0)
 
     print('\ttotal number of snps with non-zero annotation:', np.sum(nonzero))
 
-    amb = get_ambiguous(zannotconv.loc[nonzero], 'A1_x', 'A2_x')
+    amb = get_ambiguous(data.loc[nonzero], A1name, A2name)
     if np.sum(amb) > 0:
         print('\tannotation contains strand-ambiguous snps! aborting.')
+        print(data.loc[nonzero].SNP[amb])
         exit(1)
     else:
         print('\tno strand-ambiguous snps found')

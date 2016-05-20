@@ -3,14 +3,16 @@ import argparse
 import numpy as np
 import scipy.stats as stats
 import pandas as pd
-import json
 import pyutils.pretty as pretty
-import pyutils.bsub as bsub
-import pyutils.fs as fs
 import primitives.dataset as prd
 import primitives.annotation as pa
 import common
 
+
+def find_conv1_names(names):
+    return [n for n in names if '.conv1' in n]
+def make_conv1_names(names):
+    return [n+'.conv1' for n in names]
 
 def ldscores_sumstats_sigma2g(args):
     ldscores = common.get_ldscores_allchr(args.ldscores_chr, args.chroms)
@@ -69,7 +71,7 @@ def cor_fe(args):
 
     # merge sumstats with the annot, flipping alleles if necessary
     print('merging sumstats and annot file')
-    zannotconv = pd.merge(sumstats_hm3, annot, how='inner', on='SNP')
+    zannotconv = pd.merge(sumstats, annot, how='inner', on='SNP')
     print(len(zannotconv), 'SNPs have both sumstats and refpanel info')
 
     print('checking for strand ambiguous snps')
@@ -80,6 +82,7 @@ def cor_fe(args):
     zannotconv.ix[toflip, 'Z'] *= -1
 
     # create the relevant numpy arrays
+    import pdb; pdb.set_trace()
     N = np.min(zannotconv['N'].values) # TODO: try mean instead of min?
     V = zannotconv[annot_names].values
     RV = zannotconv[conv_names].values
@@ -275,264 +278,72 @@ def conv(args):
                 args.mhc_path)
 
 
-
-
-
-
-def main(args):
-    print('main')
-    refpanel = prd.Dataset(args.bfile_chr)
-    annots = [pa.Annotation(fname) for fname in args.sannot_chr]
-
-    print('reading sumstats')
-    sumstats = common.get_sumstats(args.sumstats, args.N_thresh)
-
-    for c in args.chroms:
-        print('chr', c)
-        print('merging sumstats and refpanel')
-        data = pd.merge(refpanel.bim_df(c).drop(['A1','A2'], axis=1),
-                sumstats.rename(columns={'A1':'A1_ss', 'A2':'A2_ss'}),
-                how='left', on='SNP')
-        data['TYPED'] = ~pd.isnull(data.Z)
-
-        print('reading MAF info')
-        data['MAF'] = refpanel.frq_df(c).MAF
-
-        print('reading sannot files')
-        A, A_names = common.get_annots([a.sannot_filename(c) for a in annots])
-        A[A_names] *= np.sqrt(2*data.MAF[:,None]*(1-data.MAF[:,None]))
-        AO_names = pa.Annotation.names_observed(A_names)
-        AOconv_names = pa.Annotation.names_conv(A_names)
-        AOw_names = [n + '.w' for n in AO_names]
-        AOwconv_names = [n + '.conv' for n in AOw_names]
-        if (A.SNP != data.SNP).any():
-            raise Exception('ERROR: sannot and refpanel must have same snps in same order')
-        data[A_names] = A[A_names]; data[AO_names] = A[A_names]
-        data.loc[~data.TYPED, AO_names] = 0 # zero out annotation at unobserved snps
-        data[AOw_names] = data[AO_names]
-        data.loc[data.TYPED, AOw_names] /= np.sqrt(data.loc[data.TYPED, 'N'].values[:,None])
-        data['A1_annot'] = A['A1']; data['A2_annot'] = A['A2']
-
-        print('checking for strand ambiguous snps')
-        common.check_for_strand_ambiguity(data, AO_names,
-                A1name='A1_annot', A2name='A2_annot')
-
-        print('matching sumstats alleles and annot alleles')
-        toflip = data['A1_ss'] == data['A2_annot']
-        data.ix[toflip, 'Z'] *= -1
-
-        print('convolving annotations')
-        common.convolve(data, AO_names + AOw_names, (refpanel, c),
-                args.ld_breakpoints, args.mhc_path,
-                newnames=AOconv_names+AOwconv_names)
-
-        # create the relevant numpy arrays
-        data = data.loc[data.TYPED]
-        V = data[AO_names].values
-        LV = data[AOw_names].values
-        RV = data[AOconv_names].values
-        RLV = data[AOwconv_names].values
-        alphahat = data['Z'] / np.sqrt(data['N'].values)
-
-        # compute the estimates and write output
-        result = pd.DataFrame(
-                columns=['VTalphahat',
-                    'VTRV',
-                    'cov1',
-                    'cov2',
-                    '|supp(V)|',
-                    'names'],
-                data=[[
-                    V.T.dot(alphahat),
-                    V.T.dot(RV),
-                    LV.T.dot(RLV),
-                    RV.T.dot(RV),
-                    np.sum(V != 0, axis=0),
-                    ','.join(A_names)
-                    ]])
-        outfile = '{}{}.res'.format(args.outfile_chr, c)
-        fs.makedir_for_file(outfile)
-        result.to_csv(outfile, sep='\t', index=False)
-        print(result)
-
-def merge(args):
-    print('merge')
-    ldscores = common.get_ldscores_allchr(args.ldscores_chr, args.chroms)[['SNP','L2']]
-    sumstats = common.get_sumstats(args.sumstats, args.N_thresh)
-    #TODO: change this to mean N at some point? or the appropriate 1/N1+1/N2+...+1/Nm?
-    N = np.mean(sumstats['N'].values)
-    print('merging sumstats and ldscores')
-    sumstats_merged = pd.merge(sumstats, ldscores, how='inner', on='SNP')
-    sigma2g = (np.linalg.norm(sumstats_merged['Z']/np.sqrt(sumstats_merged['N']))**2 - \
-            len(sumstats_merged)/N) / np.sum(sumstats_merged['L2'])
-    sigma2g = min(max(0,sigma2g), 1/len(sumstats_merged))
-    h2g = sigma2g*len(sumstats_merged)
-    print('h2g estimated at:', h2g, 'sigma2g:', sigma2g)
-
-    # read in files and merge
-    df = pd.concat([
-        pd.read_csv('{}{}.res'.format(args.outfile_chr, c),
-            sep='\t')
-        for c in args.chroms], axis=0).reset_index(drop=True)
-    A_names = df.names[0].split(','); df.drop(['names'], axis=1, inplace=True)
-    df = df.applymap(json.loads).applymap(np.array)
-    sums = np.sum(df, axis=0)
-    print(df)
-    print(np.sum(df, axis=0))
-    VTalphahat = np.sum(df.VTalphahat)
-    VTRV = np.sum(df.VTRV)
-    cov1 = np.sum(df.cov1)
-    cov2 = np.sum(df.cov2)
-
-    # compute estimate and covariance matrix
-    estimate = np.linalg.solve(VTRV, VTalphahat)
-    cov1_ = np.linalg.solve(VTRV, np.linalg.solve(VTRV, cov1).T)
-    cov2_ = sigma2g * np.linalg.solve(VTRV, np.linalg.solve(VTRV, cov2).T)
-    if args.reg_var:
-        cov = cov1_ + cov2_
-    else:
-        cov = cov1_
-
-    # print output
-    output = pd.DataFrame(columns=
-            ('NAME','MU_EST','MU_STDERR','MU_Z','MU_P', 'TOP', 'BOTTOM', 'COV1', 'COV2'))
-    for i, n in enumerate(A_names):
-        std = np.sqrt(cov[i,i])
-        output.loc[i] = [n, estimate[i], std,
-                estimate[i]/std,
-                2*stats.norm.sf(abs(estimate[i]/std),0,1),
-                VTalphahat,
-                VTRV,
-                cov1_,
-                cov2_]
-    print(output)
-
-    e = estimate[0]; c1 = cov1_[0,0]; c2 = cov2_[0,0]; s2e = 1-h2g
-    variances = [('fX, fb', s2e*c1),
-            ('rX, fb', c1),
-            ('fX, rb', s2e*c1 + c2),
-            ('rX, rb', c1 + c2)]
-    for name, var in variances:
-        std = np.sqrt(var)
-        print('{}: Z={}, 2-sided p={}'.format(
-            name, e/std, 2*stats.norm.sf(abs(e/std),0,1)))
-
-    covariance = pd.DataFrame(columns=A_names, data=cov)
-    print('\nfull covariance matrix:\n{}'.format(cov))
-
-    #TODO: save output and delete intermediate files?
-
-
-def submit(args):
-    print('submit')
-    # submit parallel jobs
-    submit_args = ['--outfile-chr', args.outfile_chr,
-            '--sumstats', args.sumstats,
-            '--N-thresh', str(args.N_thresh),
-            'main',
-            '--ld-breakpoints', args.ld_breakpoints,
-            '--mhc-path', args.mhc_path,
-            '--bfile-chr', args.bfile_chr,
-            '--sannot-chr'] + args.sannot_chr + \
-                (['-fullconv'] if args.fullconv else []) + \
-            ['--chroms', '$LSB_JOBINDEX']
-    outfilename = args.outfile_chr + '%I.out'
-    submit_jobname = 'acor{}[{}-{}]'.format(
-                args.outfile_chr.replace('/','_'), args.chr_start, args.chr_end)
-    jobid = bsub.submit(['python', '-u', __file__] + submit_args,
-            outfilename,
-            jobname=submit_jobname,
-            time_in_hours=1,
-            memory_GB=4,
-            debug=args.debug)
-
-    # submit merge job
-    merge_args = ['--outfile-chr', args.outfile_chr,
-            '--sumstats', args.sumstats,
-            '--N-thresh', str(args.N_thresh),
-            'merge',
-            '--ldscores-chr', args.ldscores_chr] + \
-                (['-reg-var'] if args.reg_var else []) + \
-            ['--chroms'] + map(str, range(args.chr_start, args.chr_end+1))
-    outfilename = args.outfile_chr + 'all.out'
-    bsub.submit(['python', '-u', __file__] + merge_args,
-            outfilename,
-            jobname='merge_acor{}'.format(
-                args.outfile_chr.replace('/','_')),
-            time_in_minutes=20,
-            memory_GB=2,
-            depends_on=jobid,
-            debug=args.debug)
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    # define common arguments
-    parser.add_argument('--outfile-chr', required=True,
-            help='path to an output file stem')
-    parser.add_argument('--sumstats', required=True,
-            help='path to sumstats.gz file, including extension')
-    parser.add_argument('--N-thresh', type=float, default=1.0,
-            help='this times the 90th percentile N is the sample size threshold')
-
-    # define arguments for main and submit
-    mainsubmit_parser = argparse.ArgumentParser(add_help=False)
-    #   required
-    mainsubmit_parser.add_argument('--bfile-chr', required=True,
-            help='path to plink bfile of reference panel to use, not including chrom num')
-    mainsubmit_parser.add_argument('--sannot-chr', required=True, nargs='+',
-            help='space-delimited list of paths to gzipped annot files, not including ' + \
-                    'chromosome number or .annot.gz extension')
-    #   optional
-    mainsubmit_parser.add_argument('--ld-breakpoints',
+    parser.add_argument('--ld-breakpoints',
             default='/groups/price/yakir/data/reference/pickrell_breakpoints.hg19.eur.bed',
             help='path to UCSC bed file containing one zero-length bed interval per LD' + \
                     ' breakpoint')
-    mainsubmit_parser.add_argument('--mhc-path',
+    parser.add_argument('--mhc-path',
             default='/groups/price/yakir/data/reference/hg19.MHC.bed',
             help='path to UCSC bed file containing one zero-length bed interval per LD' + \
                     ' breakpoint')
-    mainsubmit_parser.add_argument('-fullconv', action='store_true', default=False,
+    parser.add_argument('--annot-chr', required=True, nargs='+',
+            help='space-delimited list of paths to gzipped annot files, not including ' + \
+                    'chromosome number or .annot.gz extension')
+    parser.add_argument('--bfile-chr', required=True,
+            help='path to plink bfile of reference panel to use, not including chrom num')
+    parser.add_argument('--conv-chr', nargs='+',
+            help='space-delimited list of gzipped conv filenames, not including ' + \
+                    'chromosome number or .conv(full).gz extension. If not provided, we use'+\
+                    ' the value of --annot-chr for this')
+    parser.add_argument('-fullconv', action='store_true', default=False,
             help='use/generate .fullconv.gz files, which dont take LD blocks into account')
-    mainsubmit_parser.add_argument('-convfile', action='store_true', default=False,
-            help='use the .conv.gz file corresponding to the annotation supplied, ' + \
-                    'rather than generating the .conv.gz file at runtime')
-    # mainsubmit_parser.add_argument('--full-ldscores-chr', default='None',
-    #         help='ld scores to and at all refpanel snps. If supplied these will be used ' +\
-    #                 'to weight the quantity being estimated')
+    subparsers = parser.add_subparsers()
 
-    # define arguments for submit and merge
-    submitmerge_parser = argparse.ArgumentParser(add_help=False)
-    #   required
-    submitmerge_parser.add_argument('--ldscores-chr', required=True,
+    subparser_conv = subparsers.add_parser('conv')
+    subparser_conv.set_defaults(_func=conv)
+    subparser_conv.add_argument('--print-snps', default=None,
+            help='path to a list of rsids of snps whose conv values we print out')
+    subparser_conv.add_argument('--chroms', nargs='+',
+            default=[str(i) for i in range(1,23)],
+            help='which chromosomes to analyze')
+
+    subparser_cor = subparsers.add_parser('cor')
+    subparser_cor.add_argument('--ldscores-chr', required=True,
             help='path to a set of .l2.ldscore.gz files containin a column named L2 with ' + \
-                    'ld scores at a smallish set of snps. ld should be computed to other ' + \
-                    'snps in the set only')
-    submitmerge_parser.add_argument('-reg-var', action='store_true', default=False,
+                    'ld scores at all regression snps. ld should be computed to all ' + \
+                    'potentially causal snps')
+    subparser_cor.add_argument('--sumstats', required=True,
+            help='path to sumstats.gz file, including extension')
+    subparser_cor.add_argument('--out', default=None,
+            help='stem of output files, to which we append .results and .cov')
+
+    subparser_cor_subs = subparser_cor.add_subparsers()
+    subparser_cor_fe = subparser_cor_subs.add_parser('fe')
+    subparser_cor_fe.set_defaults(_func=cor_fe)
+    subparser_cor_fe.add_argument('-reg-var', action='store_true', default=False,
             help='report a std. error based on a random-beta model')
+    subparser_cor_fe.add_argument('--chroms', nargs='+',
+            default=[str(i) for i in range(1,23)],
+            help='which chromosomes to analyze')
+    subparser_cor_re = subparser_cor_subs.add_parser('re')
+    subparser_cor_re.set_defaults(_func=cor_re)
+    subparser_cor_re.add_argument('-noweights', action='store_true', default=False,
+            help='do not weight the regression')
+    subparser_cor_re.add_argument('--ldscores-weights-chr', required=True,
+            help='path to a set of .l2.ldscore.gz files containing a column named L2 with ' +\
+                    'ld scores at all regression snps. ld should be computed to all ' + \
+                    'regression snps only. Defaults to ldscores-chr. TODO: change that.')
+    subparser_cor_re.add_argument('--maf-thresh', type=float, default=0,
+            help='SNPs with maf below this threshold will not be included in regression')
+    subparser_cor_re.add_argument('-biascorrect', action='store_true', default=False,
+            help='bias correct the denominator of the regression')
+    subparser_cor_re.add_argument('--chroms', nargs='+',
+            default=[str(i) for i in range(1,23)],
+            help='which chromosomes to analyze')
 
-    # create actual subparsers
-    sp_main, sp_sub, sp_merge = bsub.add_main_and_submit(parser, main, submit,
-            merge_function=merge,
-            main_parents=[mainsubmit_parser],
-            submit_parents=[mainsubmit_parser, submitmerge_parser],
-            merge_parents=[submitmerge_parser])
-
-    # define arguments for main specifically
-    sp_main.add_argument('--chroms', nargs='+',
-            default=range(1,23),
-            help='For main: which chromosomes to analyze.')
-    sp_sub.add_argument('--chr-start', type=int,
-            default=1,
-            help='which chromosome to start submitting at')
-    sp_sub.add_argument('--chr-end', type=int,
-            default=22,
-            help='which chromosome to end submitting at (inclusive)')
-    sp_sub.add_argument('-debug', action='store_true', default=False,
-            help='do not actually submit the jobs, just print the submission commands')
-
-    # define arguments for merge specifically
-    sp_merge.add_argument('--chroms', nargs='+',
-            default=range(1,23),
-            help='which chromosomes to aggregate')
-
-    bsub.choose_parser_and_run(parser)
+    args, _ = parser.parse_known_args()
+    args.conv_chr = args.conv_chr if args.conv_chr else args.annot_chr
+    pretty.print_namespace(args, name_width=20); print()
+    args._func(args)
